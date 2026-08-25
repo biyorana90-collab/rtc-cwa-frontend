@@ -1,17 +1,16 @@
 import axios from 'axios';
 
-// Get base domain from env or fallback to Railway production URL
-let rawUrl =
-  (import.meta as any).env?.VITE_API_URL ||
-  (import.meta as any).env?.VITE_API_BASE_URL ||
+// Get base URL from environment or fallback to production Railway backend
+const rawUrl =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
   'https://rtc-cwa-backend-production.up.railway.app';
 
-// Strip any trailing slashes and trailing /api to standardize
-rawUrl = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
+// Standardize by removing trailing slashes and redundant /api suffixes
+const cleanUrl = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
-// Create clean base URL with single /api prefix
 const API = axios.create({
-  baseURL: `${rawUrl}/api`,
+  baseURL: `${cleanUrl}/api`,
   timeout: 15000,
 });
 
