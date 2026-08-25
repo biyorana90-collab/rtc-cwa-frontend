@@ -1,10 +1,17 @@
 import axios from 'axios';
 
+// Get base domain from env or fallback to Railway production URL
+const rawBaseUrl =
+  (import.meta as any).env?.VITE_API_URL ||
+  (import.meta as any).env?.VITE_API_BASE_URL ||
+  'https://rtc-cwa-backend-production.up.railway.app';
+
+// Ensure exact /api suffix without duplication
+const cleanBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+const baseURL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl : `${cleanBaseUrl}/api`;
+
 const API = axios.create({
-  baseURL:
-    (import.meta as any).env?.VITE_API_URL ||
-    (import.meta as any).env?.VITE_API_BASE_URL ||
-    'https://rtc-cwa-backend-production.up.railway.app/api',
+  baseURL,
   timeout: 15000,
 });
 
