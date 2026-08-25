@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:5002/api',
+  baseURL:
+    (import.meta as any).env?.VITE_API_URL ||
+    (import.meta as any).env?.VITE_API_BASE_URL ||
+    'https://rtc-cwa-backend-production.up.railway.app/api',
   timeout: 15000,
 });
 
