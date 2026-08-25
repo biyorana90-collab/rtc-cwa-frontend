@@ -40,7 +40,11 @@ export const Login: React.FC = () => {
 
         <h2 className="text-xl font-semibold mb-6 text-center text-slate-300">Welcome Back</h2>
 
-        {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">{error}</div>}
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded text-red-400 text-sm">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

@@ -24,7 +24,7 @@ interface MeetingItem {
 }
 
 export const Dashboard: React.FC = () => {
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout, updateUser } = useContext(AuthContext) as any;
   const [joinRoomId, setJoinRoomId] = useState('');
   const [meetingTitle, setMeetingTitle] = useState('');
   const [history, setHistory] = useState<MeetingItem[]>([]);
@@ -33,7 +33,7 @@ export const Dashboard: React.FC = () => {
   // Profile Edit Modal State
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileName, setProfileName] = useState(user?.name || '');
-  const [profileAvatar, setProfileAvatar] = useState((user as any)?.avatar || '😎');
+  const [profileAvatar, setProfileAvatar] = useState(user?.avatar || '😎');
   const [savingProfile, setSavingProfile] = useState(false);
 
   const navigate = useNavigate();
@@ -44,7 +44,7 @@ export const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if (user?.name) setProfileName(user.name);
-    if ((user as any)?.avatar) setProfileAvatar((user as any).avatar);
+    if (user?.avatar) setProfileAvatar(user.avatar);
   }, [user]);
 
   const fetchHistory = async () => {
@@ -117,9 +117,11 @@ export const Dashboard: React.FC = () => {
     e.preventDefault();
     setSavingProfile(true);
     try {
-      await API.put('/auth/profile', { name: profileName, avatar: profileAvatar });
+      const res = await API.put('/auth/profile', { name: profileName, avatar: profileAvatar });
+      if (updateUser) {
+        updateUser(res.data?.user || { ...user, name: profileName, avatar: profileAvatar });
+      }
       setIsProfileOpen(false);
-      window.location.reload();
     } catch (err) {
       console.error('Profile update failed:', err);
       alert('Failed to update profile.');
@@ -128,8 +130,12 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const upcomingMeetings = history.filter(m => m.status === 'upcoming' || (m.scheduledTime && new Date(m.scheduledTime) > new Date()));
-  const pastMeetings = history.filter(m => m.status !== 'upcoming' && (!m.scheduledTime || new Date(m.scheduledTime) <= new Date()));
+  const upcomingMeetings = history.filter(
+    (m) => m.status === 'upcoming' || (m.scheduledTime && new Date(m.scheduledTime) > new Date())
+  );
+  const pastMeetings = history.filter(
+    (m) => m.status !== 'upcoming' && (!m.scheduledTime || new Date(m.scheduledTime) <= new Date())
+  );
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
@@ -280,12 +286,17 @@ export const Dashboard: React.FC = () => {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {upcomingMeetings.map((m) => (
-                <div key={m._id || m.roomId} className="p-4 bg-slate-900 border border-slate-700 rounded-lg flex justify-between items-center">
+                <div
+                  key={m._id || m.roomId}
+                  className="p-4 bg-slate-900 border border-slate-700 rounded-lg flex justify-between items-center"
+                >
                   <div>
                     <h3 className="font-semibold text-white">{m.title || 'Scheduled Meeting'}</h3>
                     <p className="text-xs text-slate-400">Room: {m.roomId}</p>
                     {m.scheduledTime && (
-                      <p className="text-xs text-blue-400 mt-1">📅 {new Date(m.scheduledTime).toLocaleString()}</p>
+                      <p className="text-xs text-blue-400 mt-1">
+                        📅 {new Date(m.scheduledTime).toLocaleString()}
+                      </p>
                     )}
                   </div>
                   <button
