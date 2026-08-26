@@ -3,26 +3,28 @@ import axios from 'axios';
 // Cast import.meta to 'any' to resolve TypeScript 'env does not exist on ImportMeta' error
 const metaEnv = (import.meta as any).env || {};
 
-// Get base URL from environment or default production domain
-let rawUrl =
-  metaEnv.VITE_API_URL ||
-  metaEnv.VITE_API_BASE_URL ||
-  'https://rtc-cwa-backend-production.up.railway.app';
+const getValidBaseUrl = (): string => {
+  const envUrl = metaEnv.VITE_API_URL || metaEnv.VITE_API_BASE_URL;
 
-// 1. Clean stray quotes, brackets, underscores at domain boundaries, or whitespace
-rawUrl = String(rawUrl)
-  .replace(/[\[\]'"]/g, '')
-  .trim();
+  // Validate if env variable is a valid string with the target domain format
+  if (
+    typeof envUrl === 'string' &&
+    envUrl.trim().length > 0 &&
+    envUrl.includes('rtc-cwa-backend-production.up.railway.app')
+  ) {
+    let clean = envUrl.replace(/[\[\]'"]/g, '').trim();
+    clean = clean.replace(/_+$|\/+$/, '');
+    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+      clean = `https://${clean}`;
+    }
+    return clean;
+  }
 
-// 2. Remove accidental trailing underscores or non-domain characters
-rawUrl = rawUrl.replace(/_+$|\/+$/, '');
+  // Hardcoded fallback to guarantee a valid backend connection string
+  return 'https://rtc-cwa-backend-production.up.railway.app';
+};
 
-// 3. Ensure proper https:// protocol
-if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
-  rawUrl = `https://${rawUrl}`;
-}
-
-// 4. Clean trailing slashes and redundant /api path suffixes
+const rawUrl = getValidBaseUrl();
 const cleanUrl = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
 const API = axios.create({
