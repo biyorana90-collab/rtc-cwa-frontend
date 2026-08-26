@@ -9,6 +9,8 @@ interface ChatAndFilesProps {
   roomId: string;
 }
 
+const BACKEND_URL = 'https://rtc-cwa-backend-production.up.railway.app';
+
 export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId }) => {
   const { user } = useContext(AuthContext);
   const [messages, setMessages] = useState<any[]>([]);
@@ -85,6 +87,12 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     }
   };
 
+  const getFullDownloadUrl = (url: string) => {
+    if (!url) return '#';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `${BACKEND_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
   return (
     <div className="w-80 h-full bg-slate-800 border-l border-slate-700 flex flex-col">
       {/* Tabs */}
@@ -149,9 +157,10 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
                   </div>
                 </div>
                 <a
-                  href={f.fileUrl}
+                  href={getFullDownloadUrl(f.fileUrl)}
                   target="_blank"
                   rel="noreferrer"
+                  download
                   className="p-1.5 bg-slate-800 hover:bg-blue-600 rounded shrink-0 transition"
                 >
                   <Download className="w-4 h-4 text-slate-300 hover:text-white" />
