@@ -1,21 +1,22 @@
 import axios from 'axios';
 
-// Get base URL, clean up any brackets, quotes, or trailing slashes
+// Get base URL from environment variable or default string
 let rawUrl =
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_API_BASE_URL ||
   'https://rtc-cwa-backend-production.up.railway.app';
 
-// Sanitize string from stray brackets, quotes, and whitespace
+// 1. Clean out stray quotes, brackets, and whitespace
 rawUrl = String(rawUrl)
   .replace(/[\[\]'"]/g, '')
   .trim();
 
-// Ensure absolute URL fallback if missing protocol
+// 2. Ensure http:// or https:// protocol is explicitly prefixed
 if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
-  rawUrl = 'https://rtc-cwa-backend-production.up.railway.app';
+  rawUrl = `https://${rawUrl}`;
 }
 
+// 3. Strip trailing slashes and redundant /api paths
 const cleanUrl = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
 const API = axios.create({
