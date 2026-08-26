@@ -89,7 +89,11 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
   const getFullDownloadUrl = (url: string) => {
     if (!url) return '#';
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    // If URL already starts with http/https, return it directly
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    // Otherwise prepend the backend domain
     return `${BACKEND_URL}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 
