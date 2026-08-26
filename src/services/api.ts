@@ -1,13 +1,19 @@
 import axios from 'axios';
 
-// Validate environment variables; fallback to full Railway URL if missing or malformed
+// Function to safely check and sanitize the backend API URL
 const getBaseUrl = (): string => {
   const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
-  
-  if (typeof envUrl === 'string' && envUrl.includes('railway.app')) {
-    return envUrl;
+
+  // Check if env variable is valid and contains the full domain
+  if (
+    typeof envUrl === 'string' && 
+    envUrl.trim().length > 0 && 
+    envUrl.includes('rtc-cwa-backend-production.up.railway.app')
+  ) {
+    return envUrl.trim();
   }
-  
+
+  // Default fallback if Vercel env variable is missing or truncated
   return 'https://rtc-cwa-backend-production.up.railway.app';
 };
 
