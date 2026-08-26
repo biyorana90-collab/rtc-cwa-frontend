@@ -1,17 +1,10 @@
 import axios from 'axios';
 
-// Read from environment variable with fallback to Railway production URL
-const rawApiUrl =
-  (import.meta as any).env?.VITE_API_URL ||
-  'https://rtc-cwa-backend-production.up.railway.app';
-
-// Clean URL: strip trailing slashes and redundant protocol prefixes
-const cleanApiUrl = rawApiUrl
-  .replace(/\/+$/, '')
-  .replace(/^https?:\/\//, '');
+// Base URL targeting your Railway backend service
+const BASE_URL = 'https://rtc-cwa-backend-production.up.railway.app/api';
 
 const API = axios.create({
-  baseURL: `https://${cleanApiUrl}/api`,
+  baseURL: BASE_URL,
   timeout: 15000,
 });
 
