@@ -1,22 +1,28 @@
 import axios from 'axios';
 
-// Get base URL from environment variable or default string
+// Cast import.meta to 'any' to resolve TypeScript 'env does not exist on ImportMeta' error
+const metaEnv = (import.meta as any).env || {};
+
+// Get base URL from environment or default production domain
 let rawUrl =
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_API_BASE_URL ||
+  metaEnv.VITE_API_URL ||
+  metaEnv.VITE_API_BASE_URL ||
   'https://rtc-cwa-backend-production.up.railway.app';
 
-// 1. Clean out stray quotes, brackets, and whitespace
+// 1. Clean stray quotes, brackets, underscores at domain boundaries, or whitespace
 rawUrl = String(rawUrl)
   .replace(/[\[\]'"]/g, '')
   .trim();
 
-// 2. Ensure http:// or https:// protocol is explicitly prefixed
+// 2. Remove accidental trailing underscores or non-domain characters
+rawUrl = rawUrl.replace(/_+$|\/+$/, '');
+
+// 3. Ensure proper https:// protocol
 if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
   rawUrl = `https://${rawUrl}`;
 }
 
-// 3. Strip trailing slashes and redundant /api paths
+// 4. Clean trailing slashes and redundant /api path suffixes
 const cleanUrl = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
 const API = axios.create({
