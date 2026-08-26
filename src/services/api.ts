@@ -1,11 +1,17 @@
 import axios from 'axios';
 
-// Ensure the base URL resolves to your backend domain
-const rawUrl =
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_API_BASE_URL ||
-  'https://rtc-cwa-backend-production.up.railway.app';
+// Validate environment variables; fallback to full Railway URL if missing or malformed
+const getBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+  
+  if (typeof envUrl === 'string' && envUrl.includes('railway.app')) {
+    return envUrl;
+  }
+  
+  return 'https://rtc-cwa-backend-production.up.railway.app';
+};
 
+const rawUrl = getBaseUrl();
 const cleanUrl = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
 const API = axios.create({
