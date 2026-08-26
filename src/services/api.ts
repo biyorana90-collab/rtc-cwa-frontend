@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-// Base URL targeting your Railway backend service
+// Explicit production Railway API URL
 const BASE_URL = 'https://rtc-cwa-backend-production.up.railway.app/api';
 
 const API = axios.create({
