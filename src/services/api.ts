@@ -1,23 +1,21 @@
 import axios from 'axios';
 
-// Function to safely check and sanitize the backend API URL
-const getBaseUrl = (): string => {
-  const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL;
+// Get base URL, clean up any brackets, quotes, or trailing slashes
+let rawUrl =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  'https://rtc-cwa-backend-production.up.railway.app';
 
-  // Check if env variable is valid and contains the full domain
-  if (
-    typeof envUrl === 'string' && 
-    envUrl.trim().length > 0 && 
-    envUrl.includes('rtc-cwa-backend-production.up.railway.app')
-  ) {
-    return envUrl.trim();
-  }
+// Sanitize string from stray brackets, quotes, and whitespace
+rawUrl = String(rawUrl)
+  .replace(/[\[\]'"]/g, '')
+  .trim();
 
-  // Default fallback if Vercel env variable is missing or truncated
-  return 'https://rtc-cwa-backend-production.up.railway.app';
-};
+// Ensure absolute URL fallback if missing protocol
+if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+  rawUrl = 'https://rtc-cwa-backend-production.up.railway.app';
+}
 
-const rawUrl = getBaseUrl();
 const cleanUrl = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
 const API = axios.create({
