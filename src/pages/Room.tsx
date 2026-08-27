@@ -64,7 +64,6 @@ export const Room: React.FC = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
   const location = useLocation();
-
   const currentUser = user as any;
 
   // Initialize Host status explicitly from location state or specific roomId cache key
@@ -75,7 +74,6 @@ export const Room: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [peers, setPeers] = useState<{ [key: string]: PeerData }>({});
-
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -84,7 +82,6 @@ export const Room: React.FC = () => {
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
-
   const [hasWhiteboardPermission, setHasWhiteboardPermission] = useState(false);
   const [hasScreensharePermission, setHasScreensharePermission] = useState(false);
   const [permissionRequest, setPermissionRequest] = useState<{ type: 'whiteboard' | 'screenshare'; requesterSocketId: string; userName: string } | null>(null);
@@ -124,7 +121,6 @@ export const Room: React.FC = () => {
         console.warn('Could not register participant session in backend:', err);
       }
     };
-
     registerParticipant();
   }, [roomId]);
 
@@ -145,10 +141,8 @@ export const Room: React.FC = () => {
         setLocalStream(stream);
         const videoTrack = stream.getVideoTracks()[0];
         const audioTrack = stream.getAudioTracks()[0];
-
         if (videoTrack) setIsVideoOff(!videoTrack.enabled);
         if (audioTrack) setIsAudioMuted(!audioTrack.enabled);
-
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
@@ -175,13 +169,11 @@ export const Room: React.FC = () => {
     socket.on('user-joined', async ({ socketId, userName, isHost: remoteIsHost }) => {
       const pc = createPeerConnection(socketId, userName, remoteIsHost);
       peerConnections.current[socketId] = pc;
-
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
           pc.addTrack(track, localStreamRef.current!);
         });
       }
-
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -193,7 +185,6 @@ export const Room: React.FC = () => {
 
     socket.on('offer', async ({ senderSocketId, offer, userName }) => {
       let pc = peerConnections.current[senderSocketId];
-
       if (!pc) {
         pc = createPeerConnection(senderSocketId, userName);
         peerConnections.current[senderSocketId] = pc;
@@ -203,9 +194,7 @@ export const Room: React.FC = () => {
           });
         }
       }
-
       if (pc.signalingState !== 'stable') return;
-
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer();
@@ -357,18 +346,15 @@ export const Room: React.FC = () => {
 
   const createPeerConnection = (targetSocketId: string, userName?: string, isHostRole?: boolean) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
-
     pc.onicecandidate = (event) => {
       if (event.candidate && socket) {
         socket.emit('ice-candidate', { targetSocketId, candidate: event.candidate });
       }
     };
-
     pc.ontrack = (event) => {
       const remoteStream = event.streams[0];
       if (remoteStream) {
         peerStreams.current[targetSocketId] = remoteStream;
-
         setPeers((prev) => {
           const currentPeer = prev[targetSocketId] || {};
           return {
@@ -384,7 +370,6 @@ export const Room: React.FC = () => {
         });
       }
     };
-
     return pc;
   };
 
@@ -396,7 +381,6 @@ export const Room: React.FC = () => {
       }
       return;
     }
-
     const nextState = !showWhiteboard;
     setShowWhiteboard(nextState);
     if (socket) {
@@ -439,11 +423,9 @@ export const Room: React.FC = () => {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         recordedChunks.current = [];
         const recorder = new MediaRecorder(stream);
-
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) recordedChunks.current.push(e.data);
         };
-
         recorder.onstop = () => {
           const blob = new Blob(recordedChunks.current, { type: 'video/webm' });
           const url = URL.createObjectURL(blob);
@@ -453,7 +435,6 @@ export const Room: React.FC = () => {
           a.click();
           URL.revokeObjectURL(url);
         };
-
         recorder.start();
         mediaRecorderRef.current = recorder;
         setIsRecording(true);
@@ -528,11 +509,14 @@ export const Room: React.FC = () => {
 
       Object.values(peerConnections.current).forEach((pc) => {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-        if (sender) sender.replaceTrack(screenTrack);
+        if (sender) {
+          sender.replaceTrack(screenTrack);
+        } else {
+          pc.addTrack(screenTrack, screenStream);
+        }
       });
 
       if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
-
       screenTrack.onended = () => stopScreenShare();
       setIsScreenSharing(true);
     } catch (err) {
@@ -731,7 +715,6 @@ export const Room: React.FC = () => {
             </div>
           )}
         </div>
-
         {/* Sidebar Chat & File Sharing Panel */}
         <ChatAndFilesPanel socket={socket} roomId={roomId || ''} />
       </div>
@@ -745,7 +728,6 @@ export const Room: React.FC = () => {
         >
           {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
         </button>
-
         <button
           onClick={toggleCamera}
           className={`p-3 rounded-full border transition ${isVideoOff ? 'bg-red-600 border-red-500 text-white' : 'bg-slate-700 border-slate-600 text-white hover:bg-slate-600'}`}
@@ -753,7 +735,6 @@ export const Room: React.FC = () => {
         >
           {isVideoOff ? <VideoOff className="w-5 h-5" /> : <VideoIcon className="w-5 h-5" />}
         </button>
-
         <button
           onClick={toggleScreenShare}
           className={`p-3 rounded-full border transition ${isScreenSharing ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-700 border-slate-600 text-white hover:bg-slate-600'}`}
@@ -761,7 +742,6 @@ export const Room: React.FC = () => {
         >
           <Monitor className="w-5 h-5" />
         </button>
-
         <button
           onClick={toggleHandRaise}
           className={`p-3 rounded-full border transition ${isHandRaised ? 'bg-yellow-500 border-yellow-400 text-slate-950' : 'bg-slate-700 border-slate-600 text-white hover:bg-slate-600'}`}
@@ -769,7 +749,6 @@ export const Room: React.FC = () => {
         >
           <Hand className="w-5 h-5" />
         </button>
-
         <button
           onClick={toggleScreenRecording}
           className={`p-3 rounded-full border transition ${isRecording ? 'bg-red-600 border-red-500 text-white animate-pulse' : 'bg-slate-700 border-slate-600 text-white hover:bg-slate-600'}`}
@@ -777,7 +756,6 @@ export const Room: React.FC = () => {
         >
           <Disc className="w-5 h-5" />
         </button>
-
         <button
           onClick={leaveRoom}
           className="p-3 rounded-full bg-slate-700 hover:bg-slate-600 border border-slate-600 text-red-400 transition"
@@ -785,7 +763,6 @@ export const Room: React.FC = () => {
         >
           <PhoneOff className="w-5 h-5" />
         </button>
-
         {isHost && (
           <button
             onClick={endMeetingForAll}
