@@ -128,31 +128,29 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     return `${BACKEND_URL}${cleaned.startsWith('/') ? '' : '/'}${cleaned}`;
   };
 
-  const handleDownloadFile = async (f: any) => {
-    const downloadUrl = sanitizeUrl(f.fileUrl);
-
+  const handleDownloadFile = async (rawUrl: string, fileName: string) => {
     try {
-      const response = await fetch(downloadUrl);
+      const cleanFileUrl = sanitizeUrl(rawUrl);
+      const response = await fetch(cleanFileUrl, { method: 'GET' });
+
       if (!response.ok) throw new Error('Network response was not ok');
 
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('text/html')) {
-        throw new Error('Received HTML payload instead of binary file');
-      }
-
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = f.originalName || f.filename || 'downloaded-file';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      console.warn('Direct blob stream failed, falling back to direct window access:', err);
-      window.open(downloadUrl, '_blank');
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName || 'downloaded-file';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.warn('Direct blob fetch failed, falling back to window anchor open:', error);
+      const link = document.createElement('a');
+      link.href = sanitizeUrl(rawUrl);
+      link.target = '_blank';
+      link.download = fileName;
+      link.click();
     }
   };
 
@@ -222,7 +220,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
                   </div>
                 </div>
                 <button
-                  onClick={() => handleDownloadFile(f)}
+                  onClick={() => handleDownloadFile(f.fileUrl || f.url || f.path || f.filename, f.originalName || f.filename)}
                   className="p-1.5 bg-slate-800 hover:bg-blue-600 rounded shrink-0 transition"
                   title="Download File"
                 >

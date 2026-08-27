@@ -396,28 +396,27 @@ export const Room: React.FC = () => {
     }
   };
 
-  const toggleCamera = async () => {
+const toggleCamera = async () => {
+  try {
     let currentStream = localStream;
 
+    // If local stream does not exist or has no active tracks, acquire video
     if (!currentStream) {
-      try {
-        currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: !isAudioMuted });
-        setLocalStream(currentStream);
-        if (localVideoRef.current) localVideoRef.current.srcObject = currentStream;
-      } catch (err) {
-        console.error('Failed to access camera stream:', err);
-        return;
-      }
+      currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: !isAudioMuted });
+      setLocalStream(currentStream);
+      if (localVideoRef.current) localVideoRef.current.srcObject = currentStream;
     }
 
     let videoTrack = currentStream.getVideoTracks()[0];
 
     if (videoTrack) {
-      const nextState = !videoTrack.enabled;
-      videoTrack.enabled = nextState;
-      const newVideoOff = !nextState;
-      setIsVideoOff(newVideoOff);
+      // Toggle state directly on existing video track
+      const nextEnabledState = !videoTrack.enabled;
+      videoTrack.enabled = nextEnabledState;
+      const newVideoOffState = !nextEnabledState;
+      setIsVideoOff(newVideoOffState);
 
+      // Instantly swap track across all active peer senders
       Object.values(peerConnections.current).forEach((pc) => {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
         if (sender) {
@@ -425,38 +424,39 @@ export const Room: React.FC = () => {
         }
       });
 
+      // Broadcast updated video status to room peers
       if (socket && roomId) {
-        socket.emit('toggle-camera', { roomId, isVideoOff: newVideoOff });
+        socket.emit('toggle-camera', { roomId, isVideoOff: newVideoOffState });
       }
     } else {
-      try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        const newVideoTrack = mediaStream.getVideoTracks()[0];
+      // Re-acquire camera track if stopped previously
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const newVideoTrack = mediaStream.getVideoTracks()[0];
 
-        currentStream.addTrack(newVideoTrack);
-        setIsVideoOff(false);
+      currentStream.addTrack(newVideoTrack);
+      setIsVideoOff(false);
 
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = currentStream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = currentStream;
+      }
+
+      Object.values(peerConnections.current).forEach((pc) => {
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(newVideoTrack);
+        } else {
+          pc.addTrack(newVideoTrack, currentStream!);
         }
+      });
 
-        Object.values(peerConnections.current).forEach((pc) => {
-          const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(newVideoTrack);
-          } else {
-            pc.addTrack(newVideoTrack, currentStream!);
-          }
-        });
-
-        if (socket && roomId) {
-          socket.emit('toggle-camera', { roomId, isVideoOff: false });
-        }
-      } catch (err) {
-        console.error('Failed to dynamically acquire camera track:', err);
+      if (socket && roomId) {
+        socket.emit('toggle-camera', { roomId, isVideoOff: false });
       }
     }
-  };
+  } catch (err) {
+    console.error('Error toggling camera dynamically:', err);
+  }
+};
 
   const handleToggleWhiteboard = () => {
     if (!isHost && !hasWhiteboardPermission) {
