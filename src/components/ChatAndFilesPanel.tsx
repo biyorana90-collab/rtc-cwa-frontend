@@ -67,7 +67,6 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         }, 50);
       }
     } catch (err) {
-      // Fallback silently if chat history endpoint returns 404
       setMessages([]);
     }
   };
@@ -115,15 +114,16 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     if (!rawUrl) return '';
     let cleaned = String(rawUrl).replace(/[\[\]\(\)\"\']/g, '').trim();
 
-    if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
-      return cleaned;
+    // Fix double domain prefixing issue
+    const lastHttps = cleaned.lastIndexOf('https://');
+    const lastHttp = cleaned.lastIndexOf('http://');
+
+    if (lastHttps !== -1) {
+      return cleaned.substring(lastHttps);
     }
-
-    const httpsIndex = cleaned.indexOf('https://');
-    const httpIndex = cleaned.indexOf('http://');
-
-    if (httpsIndex !== -1) return cleaned.substring(httpsIndex);
-    if (httpIndex !== -1) return cleaned.substring(httpIndex);
+    if (lastHttp !== -1) {
+      return cleaned.substring(lastHttp);
+    }
 
     const formattedPath = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
     return `${BACKEND_URL}${formattedPath}`;
@@ -145,7 +145,6 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
     } catch (error) {
-      // Direct anchor click fallback for cross-origin / direct static files
       const link = document.createElement('a');
       link.href = targetUrl;
       link.target = '_blank';

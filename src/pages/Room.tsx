@@ -186,6 +186,12 @@ export const Room: React.FC = () => {
     if (!socket) return;
 
     socket.on('user-joined', async ({ socketId, userName, isHost: remoteIsHost, isVideoOff: remoteVideoState }) => {
+      // Clean up previous connection if rejoin happens on same or existing socket key
+      if (peerConnections.current[socketId]) {
+        peerConnections.current[socketId].close();
+        delete peerConnections.current[socketId];
+      }
+
       setPeers((prev) => ({
         ...prev,
         [socketId]: {
@@ -224,14 +230,17 @@ export const Room: React.FC = () => {
       }));
 
       let pc = peerConnections.current[senderSocketId];
-      if (!pc) {
-        pc = createPeerConnection(senderSocketId, userName, false, remoteVideoState);
-        peerConnections.current[senderSocketId] = pc;
-        if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach((track) => {
-            pc.addTrack(track, localStreamRef.current!);
-          });
-        }
+      if (pc) {
+        pc.close();
+      }
+
+      pc = createPeerConnection(senderSocketId, userName, false, remoteVideoState);
+      peerConnections.current[senderSocketId] = pc;
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => {
+          pc.addTrack(track, localStreamRef.current!);
+        });
       }
 
       try {
