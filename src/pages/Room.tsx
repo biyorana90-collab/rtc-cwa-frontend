@@ -66,7 +66,6 @@ export const Room: React.FC = () => {
   const location = useLocation();
   const currentUser = user as any;
 
-  // Initialize Host status explicitly from location state or specific roomId cache key
   const [isHost, setIsHost] = useState<boolean>(
     location.state?.isHost ?? (localStorage.getItem(`isHost_${roomId}`) === 'true')
   );
@@ -141,18 +140,27 @@ export const Room: React.FC = () => {
         setLocalStream(stream);
         const videoTrack = stream.getVideoTracks()[0];
         const audioTrack = stream.getAudioTracks()[0];
-        if (videoTrack) setIsVideoOff(!videoTrack.enabled);
+        const initialVideoState = videoTrack ? !videoTrack.enabled : true;
+        setIsVideoOff(initialVideoState);
         if (audioTrack) setIsAudioMuted(!audioTrack.enabled);
+        
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
-        newSocket.emit('join-room', { roomId, userId: currentUser?._id, userName: currentUser?.name, isHost });
+
+        newSocket.emit('join-room', { 
+          roomId, 
+          userId: currentUser?._id, 
+          userName: currentUser?.name, 
+          isHost,
+          isVideoOff: initialVideoState 
+        });
       })
       .catch((err) => {
         console.warn('Hardware access error:', err);
         setIsVideoOff(true);
         setIsAudioMuted(true);
-        newSocket.emit('join-room', { roomId, userId: currentUser?._id, userName: currentUser?.name, isHost });
+        newSocket.emit('join-room', { roomId, userId: currentUser?._id, userName: currentUser?.name, isHost, isVideoOff: true });
       });
 
     return () => {
@@ -166,8 +174,8 @@ export const Room: React.FC = () => {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('user-joined', async ({ socketId, userName, isHost: remoteIsHost }) => {
-      const pc = createPeerConnection(socketId, userName, remoteIsHost);
+    socket.on('user-joined', async ({ socketId, userName, isHost: remoteIsHost, isVideoOff: remoteVideoState }) => {
+      const pc = createPeerConnection(socketId, userName, remoteIsHost, remoteVideoState);
       peerConnections.current[socketId] = pc;
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
@@ -177,23 +185,29 @@ export const Room: React.FC = () => {
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('offer', { targetSocketId: socketId, offer, userName: currentUser?.name });
+        socket.emit('offer', { targetSocketId: socketId, offer, userName: currentUser?.name, isVideoOff });
       } catch (err) {
         console.error('Error creating offer:', err);
       }
     });
 
-    socket.on('offer', async ({ senderSocketId, offer, userName }) => {
+    socket.on('offer', async ({ senderSocketId, offer, userName, isVideoOff: remoteVideoState }) => {
       let pc = peerConnections.current[senderSocketId];
       if (!pc) {
-        pc = createPeerConnection(senderSocketId, userName);
+        pc = createPeerConnection(senderSocketId, userName, false, remoteVideoState);
         peerConnections.current[senderSocketId] = pc;
         if (localStreamRef.current) {
           localStreamRef.current.getTracks().forEach((track) => {
             pc.addTrack(track, localStreamRef.current!);
           });
         }
+      } else {
+        setPeers((prev) => ({
+          ...prev,
+          [senderSocketId]: { ...prev[senderSocketId], isVideoMuted: remoteVideoState },
+        }));
       }
+
       if (pc.signalingState !== 'stable') return;
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
@@ -342,9 +356,9 @@ export const Room: React.FC = () => {
       socket.off('meeting-ended');
       socket.off('user-left');
     };
-  }, [socket, isHost, navigate]);
+  }, [socket, isHost, isVideoOff, navigate]);
 
-  const createPeerConnection = (targetSocketId: string, userName?: string, isHostRole?: boolean) => {
+  const createPeerConnection = (targetSocketId: string, userName?: string, isHostRole?: boolean, isVideoMutedInit = false) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     pc.onicecandidate = (event) => {
       if (event.candidate && socket) {
@@ -363,7 +377,7 @@ export const Room: React.FC = () => {
               ...currentPeer,
               userName: userName || currentPeer.userName,
               isHost: isHostRole !== undefined ? isHostRole : currentPeer.isHost,
-              isVideoMuted: currentPeer.isVideoMuted ?? false,
+              isVideoMuted: currentPeer.isVideoMuted ?? isVideoMutedInit,
               hasStream: true,
             },
           };
@@ -723,7 +737,6 @@ export const Room: React.FC = () => {
             </div>
           )}
         </div>
-        {/* Sidebar Chat & File Sharing Panel */}
         <ChatAndFilesPanel socket={socket} roomId={roomId || ''} />
       </div>
 

@@ -102,7 +102,17 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
   const handleDownloadFile = async (f: any) => {
     try {
       const targetUrl = getCleanDownloadUrl(f.fileUrl);
-      const response = await fetch(targetUrl);
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error status: ${response.status}`);
+      }
+
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       
@@ -114,8 +124,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       link.remove();
       window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      console.error('Download failed:', err);
-      // Fallback direct navigation download
+      console.error('Blob download failed, attempting direct window fallback:', err);
       window.open(getCleanDownloadUrl(f.fileUrl), '_blank');
     }
   };
