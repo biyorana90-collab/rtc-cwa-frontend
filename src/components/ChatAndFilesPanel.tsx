@@ -87,14 +87,21 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     }
   };
 
-  const getFullDownloadUrl = (url: string) => {
-    if (!url) return '#';
-    // If URL already starts with http/https, return it directly
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return url;
+  // Safely resolve exact single download URL
+  const getCleanDownloadUrl = (rawUrl: string): string => {
+    if (!rawUrl) return '#';
+    
+    // Extract actual file path if string contains bracketed markdown or double URLs
+    const matches = rawUrl.match(/https?:\/\/[^\s\]\)]+/g);
+    if (matches && matches.length > 0) {
+      return matches[matches.length - 1];
     }
-    // Otherwise prepend the backend domain
-    return `${BACKEND_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return rawUrl;
+    }
+
+    return `${BACKEND_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
   };
 
   return (
@@ -161,7 +168,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
                   </div>
                 </div>
                 <a
-                  href={getFullDownloadUrl(f.fileUrl)}
+                  href={getCleanDownloadUrl(f.fileUrl)}
                   target="_blank"
                   rel="noreferrer"
                   download
