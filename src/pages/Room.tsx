@@ -67,8 +67,9 @@ export const Room: React.FC = () => {
 
   const currentUser = user as any;
 
+  // Initialize Host status explicitly from location state or specific roomId cache key
   const [isHost, setIsHost] = useState<boolean>(
-    location.state?.isHost || localStorage.getItem(`isHost_${roomId}`) === 'true'
+    location.state?.isHost ?? (localStorage.getItem(`isHost_${roomId}`) === 'true')
   );
 
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -111,9 +112,12 @@ export const Room: React.FC = () => {
       try {
         const res = await API.post(`/meetings/join/${roomId}`);
         if (res.data?.isHost !== undefined) {
-          setIsHost(res.data.isHost);
-          if (res.data.isHost) {
+          const verifiedIsHost = !!res.data.isHost;
+          setIsHost(verifiedIsHost);
+          if (verifiedIsHost) {
             localStorage.setItem(`isHost_${roomId}`, 'true');
+          } else {
+            localStorage.removeItem(`isHost_${roomId}`);
           }
         }
       } catch (err) {
@@ -163,7 +167,7 @@ export const Room: React.FC = () => {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [roomId]);
+  }, [roomId, isHost]);
 
   useEffect(() => {
     if (!socket) return;
@@ -699,7 +703,7 @@ export const Room: React.FC = () => {
                     )}
                     <div className="absolute bottom-3 left-3 flex items-center gap-2">
                       <span className="bg-slate-900/80 text-white px-3 py-1 rounded text-xs border border-slate-700">
-                        {peer.userName || 'Participant'}
+                        {peer.userName || 'Participant'} {peer.isHost ? '[Host]' : ''}
                       </span>
                       {peer.isHandRaised && <Hand className="w-4 h-4 text-yellow-400 animate-bounce" />}
                     </div>
