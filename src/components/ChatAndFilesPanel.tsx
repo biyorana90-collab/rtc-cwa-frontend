@@ -52,13 +52,13 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
   const fetchFiles = async () => {
     try {
-      const res = await API.get(`/api/files/${roomId}`);
+      const res = await API.get(`/files/${roomId}`);
       if (Array.isArray(res.data)) {
         setFiles(res.data);
       }
     } catch (err) {
       try {
-        const fallbackRes = await API.get(`/files/${roomId}`);
+        const fallbackRes = await API.get(`/api/files/${roomId}`);
         if (Array.isArray(fallbackRes.data)) setFiles(fallbackRes.data);
       } catch (fallbackErr) {
         setFiles([]);
@@ -68,14 +68,14 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
   const fetchChatHistory = async () => {
     try {
-      const res = await API.get(`/api/messages/${roomId}`);
+      const res = await API.get(`/messages/${roomId}`);
       if (Array.isArray(res.data)) {
         setMessages(res.data);
         setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       }
     } catch (err) {
       try {
-        const fallbackRes = await API.get(`/messages/${roomId}`);
+        const fallbackRes = await API.get(`/api/messages/${roomId}`);
         if (Array.isArray(fallbackRes.data)) {
           setMessages(fallbackRes.data);
           setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -113,11 +113,11 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     try {
       let res;
       try {
-        res = await API.post('/api/files/upload', formData, {
+        res = await API.post('/files/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
       } catch {
-        res = await API.post('/files/upload', formData, {
+        res = await API.post('/api/files/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
       }

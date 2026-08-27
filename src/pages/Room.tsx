@@ -121,9 +121,9 @@ export const Room: React.FC = () => {
       try {
         let res;
         try {
-          res = await API.post(`/api/meetings/join/${roomId}`);
-        } catch {
           res = await API.post(`/meetings/join/${roomId}`);
+        } catch {
+          res = await API.post(`/api/meetings/join/${roomId}`);
         }
         if (res.data?.isHost !== undefined) {
           const verifiedIsHost = !!res.data.isHost;
