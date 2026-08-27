@@ -54,6 +54,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     if (!inputMsg.trim() || !socket) return;
 
     const payload = {
+      roomId,
       sender: user?.name || 'Anonymous',
       message: inputMsg.trim(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

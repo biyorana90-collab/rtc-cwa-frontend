@@ -50,27 +50,32 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ socket, roomId, isHost, 
 
     if (!socket) return;
 
-    socket.on('draw-line', (data: { x0: number; y0: number; x1: number; y1: number; color: string; lineWidth: number; tool?: Tool }) => {
+    const handleDrawLine = (data: { x0: number; y0: number; x1: number; y1: number; color: string; lineWidth: number; tool?: Tool }) => {
       const currentCanvas = canvasRef.current;
       if (!currentCanvas) return;
       const w = currentCanvas.width;
       const h = currentCanvas.height;
       drawShape(data.x0 * w, data.y0 * h, data.x1 * w, data.y1 * h, data.color, data.lineWidth, data.tool || 'pen', false);
-    });
+    };
 
-    socket.on('clear-whiteboard', () => {
+    const handleClearCanvas = () => {
       const currentCanvas = canvasRef.current;
       if (!currentCanvas) return;
       const currentCtx = currentCanvas.getContext('2d');
       if (currentCtx) {
         currentCtx.clearRect(0, 0, currentCanvas.width, currentCanvas.height);
       }
-    });
+    };
+
+    socket.on('draw-line', handleDrawLine);
+    socket.on('clear-whiteboard', handleClearCanvas);
+    socket.on('clear-canvas', handleClearCanvas);
 
     return () => {
       window.removeEventListener('resize', resizeCanvas);
-      socket.off('draw-line');
-      socket.off('clear-whiteboard');
+      socket.off('draw-line', handleDrawLine);
+      socket.off('clear-whiteboard', handleClearCanvas);
+      socket.off('clear-canvas', handleClearCanvas);
     };
   }, [socket]);
 
