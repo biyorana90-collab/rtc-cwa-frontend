@@ -121,10 +121,18 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
   const sanitizeUrl = (rawUrl: string): string => {
     if (!rawUrl) return '';
-    let cleaned = rawUrl.replace(/[\[\]\(\)\"\']/g, '').trim();
-    if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
-      return cleaned;
+    let cleaned = String(rawUrl).replace(/[\[\]\(\)\"\']/g, '').trim();
+
+    const httpIndex = cleaned.indexOf('http://');
+    const httpsIndex = cleaned.indexOf('https://');
+
+    if (httpsIndex !== -1) {
+      return cleaned.substring(httpsIndex);
     }
+    if (httpIndex !== -1) {
+      return cleaned.substring(httpIndex);
+    }
+
     return `${BACKEND_URL}${cleaned.startsWith('/') ? '' : '/'}${cleaned}`;
   };
 
