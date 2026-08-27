@@ -87,45 +87,40 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     }
   };
 
-  const getCleanDownloadUrl = (rawUrl: string): string => {
+  const sanitizeUrl = (rawUrl: string): string => {
     if (!rawUrl) return '';
-    const matches = rawUrl.match(/https?:\/\/[^\s\]\)\"]+/g);
-    if (matches && matches.length > 0) {
-      return matches[matches.length - 1];
+    let cleaned = rawUrl.replace(/[\[\]\(\)\"\']/g, '').trim();
+    if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+      return cleaned;
     }
-    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-      return rawUrl;
-    }
-    return `${BACKEND_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+    return `${BACKEND_URL}${cleaned.startsWith('/') ? '' : '/'}${cleaned}`;
   };
 
   const handleDownloadFile = async (f: any) => {
+    const downloadUrl = sanitizeUrl(f.fileUrl);
+
     try {
-      const targetUrl = getCleanDownloadUrl(f.fileUrl);
-      const token = localStorage.getItem('token');
+      const response = await fetch(downloadUrl);
+      if (!response.ok) throw new Error('Network response was not ok');
 
-      const response = await fetch(targetUrl, {
-        method: 'GET',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('text/html')) {
+        throw new Error('Received HTML payload instead of binary file');
       }
 
       const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', f.originalName || f.filename || 'downloaded-file');
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(blobUrl);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = f.originalName || f.filename || 'downloaded-file';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     } catch (err) {
-      console.error('Blob fetch failed, resorting to direct tab opening:', err);
-      window.open(getCleanDownloadUrl(f.fileUrl), '_blank');
+      console.warn('Direct blob stream failed, falling back to direct window access:', err);
+      window.open(downloadUrl, '_blank');
     }
   };
 

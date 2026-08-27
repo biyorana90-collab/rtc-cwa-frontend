@@ -38,17 +38,15 @@ interface PeerData {
   stream?: MediaStream;
 }
 
-const RemoteVideo: React.FC<{ stream: MediaStream | undefined; isVideoMuted: boolean }> = ({ stream, isVideoMuted }) => {
+const RemoteVideoPlayer: React.FC<{ stream?: MediaStream }> = ({ stream }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
-      videoRef.current.play().catch((err) => console.warn('Autoplay prevented:', err));
+      videoRef.current.play().catch((err) => console.warn('Remote video playback deferred:', err));
     }
-  }, [stream, isVideoMuted]);
-
-  if (isVideoMuted) return null;
+  }, [stream]);
 
   return (
     <video
@@ -100,7 +98,7 @@ export const Room: React.FC = () => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
     }
-  }, [localStream, isVideoOff]);
+  }, [localStream]);
 
   useEffect(() => {
     const registerParticipant = async () => {
@@ -208,7 +206,6 @@ export const Room: React.FC = () => {
         }));
       }
 
-      if (pc.signalingState !== 'stable') return;
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer();
@@ -221,7 +218,7 @@ export const Room: React.FC = () => {
 
     socket.on('answer', async ({ senderSocketId, answer }) => {
       const pc = peerConnections.current[senderSocketId];
-      if (pc && pc.signalingState === 'have-local-offer') {
+      if (pc && (pc.signalingState === 'have-local-offer' || pc.signalingState === 'have-remote-offer')) {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
         } catch (err) {
@@ -359,30 +356,61 @@ export const Room: React.FC = () => {
 
   const createPeerConnection = (targetSocketId: string, userName?: string, isHostRole?: boolean, isVideoMutedInit = false) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
+
     pc.onicecandidate = (event) => {
       if (event.candidate && socket) {
         socket.emit('ice-candidate', { targetSocketId, candidate: event.candidate });
       }
     };
+
     pc.ontrack = (event) => {
-      const remoteStream = event.streams[0];
-      if (remoteStream) {
-        setPeers((prev) => {
-          const currentPeer = prev[targetSocketId] || {};
-          return {
-            ...prev,
-            [targetSocketId]: {
-              ...currentPeer,
-              userName: userName || currentPeer.userName,
-              isHost: isHostRole !== undefined ? isHostRole : currentPeer.isHost,
-              isVideoMuted: currentPeer.isVideoMuted ?? isVideoMutedInit,
-              stream: remoteStream,
-            },
-          };
-        });
-      }
+      const remoteStream = event.streams[0] || new MediaStream([event.track]);
+      setPeers((prev) => {
+        const currentPeer = prev[targetSocketId] || {};
+        return {
+          ...prev,
+          [targetSocketId]: {
+            ...currentPeer,
+            userName: userName || currentPeer.userName,
+            isHost: isHostRole !== undefined ? isHostRole : currentPeer.isHost,
+            isVideoMuted: currentPeer.isVideoMuted ?? isVideoMutedInit,
+            stream: remoteStream,
+          },
+        };
+      });
     };
+
     return pc;
+  };
+
+  const renegotiatePeerConnections = async () => {
+    if (!socket) return;
+    for (const [targetSocketId, pc] of Object.entries(peerConnections.current)) {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { targetSocketId, offer, userName: currentUser?.name, isVideoOff });
+      } catch (err) {
+        console.error('Failed to renegotiate peer connection:', err);
+      }
+    }
+  };
+
+  const toggleCamera = async () => {
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        const nextState = !videoTrack.enabled;
+        videoTrack.enabled = nextState;
+        const newVideoOff = !nextState;
+        setIsVideoOff(newVideoOff);
+
+        if (socket && roomId) {
+          socket.emit('toggle-camera', { roomId, isVideoOff: newVideoOff });
+        }
+        await renegotiatePeerConnections();
+      }
+    }
   };
 
   const handleToggleWhiteboard = () => {
@@ -480,21 +508,6 @@ export const Room: React.FC = () => {
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         setIsAudioMuted(!audioTrack.enabled);
-      }
-    }
-  };
-
-  const toggleCamera = () => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        const nextState = !videoTrack.enabled;
-        videoTrack.enabled = nextState;
-        setIsVideoOff(!nextState);
-
-        if (socket && roomId) {
-          socket.emit('toggle-camera', { roomId, isVideoOff: !nextState });
-        }
       }
     }
   };
@@ -660,14 +673,15 @@ export const Room: React.FC = () => {
           ) : (
             <div className={`grid gap-4 flex-1 auto-rows-fr ${Object.keys(peers).length === 0 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
               <div className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center shadow-lg">
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover ${isVideoOff ? 'hidden' : 'block'}`}
-                />
-                {isVideoOff && (
+                {!isVideoOff ? (
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover block"
+                  />
+                ) : (
                   <div className="flex flex-col items-center justify-center gap-3">
                     <div className="w-20 h-20 rounded-full bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-2xl font-bold text-blue-400">
                       {currentUser?.name?.charAt(0).toUpperCase() || 'U'}
@@ -684,13 +698,13 @@ export const Room: React.FC = () => {
               </div>
 
               {Object.entries(peers).map(([id, peer]) => {
-                const isVideoMuted = !!peer.isVideoMuted;
+                const isMuted = !!peer.isVideoMuted;
 
                 return (
                   <div key={id} className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center shadow-lg">
-                    <RemoteVideo stream={peer.stream} isVideoMuted={isVideoMuted} />
-
-                    {isVideoMuted && (
+                    {!isMuted && peer.stream ? (
+                      <RemoteVideoPlayer stream={peer.stream} />
+                    ) : (
                       <div className="flex flex-col items-center justify-center gap-3">
                         <div className="w-20 h-20 rounded-full bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-2xl font-bold text-blue-400">
                           {peer.userName?.charAt(0).toUpperCase() || 'P'}
