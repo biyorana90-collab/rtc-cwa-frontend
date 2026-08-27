@@ -35,7 +35,7 @@ interface PeerData {
   isHost?: boolean;
   isHandRaised?: boolean;
   isVideoMuted?: boolean;
-  hasStream?: boolean;
+  stream?: MediaStream;
 }
 
 const RemoteVideo: React.FC<{ stream: MediaStream | undefined; isVideoMuted: boolean }> = ({ stream, isVideoMuted }) => {
@@ -44,8 +44,9 @@ const RemoteVideo: React.FC<{ stream: MediaStream | undefined; isVideoMuted: boo
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      videoRef.current.play().catch((err) => console.warn('Autoplay prevented:', err));
     }
-  }, [stream]);
+  }, [stream, isVideoMuted]);
 
   if (isVideoMuted) return null;
 
@@ -87,7 +88,6 @@ export const Room: React.FC = () => {
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerConnections = useRef<{ [key: string]: RTCPeerConnection }>({});
-  const peerStreams = useRef<{ [key: string]: MediaStream }>({});
   const localStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunks = useRef<Blob[]>([]);
@@ -143,7 +143,7 @@ export const Room: React.FC = () => {
         const initialVideoState = videoTrack ? !videoTrack.enabled : true;
         setIsVideoOff(initialVideoState);
         if (audioTrack) setIsAudioMuted(!audioTrack.enabled);
-        
+
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
         }
@@ -331,7 +331,6 @@ export const Room: React.FC = () => {
         peerConnections.current[socketId].close();
         delete peerConnections.current[socketId];
       }
-      delete peerStreams.current[socketId];
       setPeers((prev) => {
         const updated = { ...prev };
         delete updated[socketId];
@@ -368,7 +367,6 @@ export const Room: React.FC = () => {
     pc.ontrack = (event) => {
       const remoteStream = event.streams[0];
       if (remoteStream) {
-        peerStreams.current[targetSocketId] = remoteStream;
         setPeers((prev) => {
           const currentPeer = prev[targetSocketId] || {};
           return {
@@ -378,7 +376,7 @@ export const Room: React.FC = () => {
               userName: userName || currentPeer.userName,
               isHost: isHostRole !== undefined ? isHostRole : currentPeer.isHost,
               isVideoMuted: currentPeer.isVideoMuted ?? isVideoMutedInit,
-              hasStream: true,
+              stream: remoteStream,
             },
           };
         });
@@ -564,7 +562,6 @@ export const Room: React.FC = () => {
     }
     Object.values(peerConnections.current).forEach((pc) => pc.close());
     peerConnections.current = {};
-    peerStreams.current = {};
     localStorage.removeItem(`isHost_${roomId}`);
     navigate('/dashboard');
   };
@@ -586,7 +583,6 @@ export const Room: React.FC = () => {
 
   return (
     <div className={`h-screen w-screen flex flex-col overflow-hidden ${darkMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-900'}`}>
-      {/* Host Permission Request Modal */}
       {isHost && permissionRequest && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-sm w-full shadow-2xl text-white">
@@ -613,7 +609,6 @@ export const Room: React.FC = () => {
         </div>
       )}
 
-      {/* Top Header */}
       <div className={`h-14 px-6 flex justify-between items-center shrink-0 border-b ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="flex items-center gap-3">
           <span className="font-bold text-blue-500 text-lg">Room: {roomId}</span>
@@ -653,7 +648,6 @@ export const Room: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Interface Area */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 p-4 overflow-hidden flex flex-col">
           {showWhiteboard ? (
@@ -665,7 +659,6 @@ export const Room: React.FC = () => {
             />
           ) : (
             <div className={`grid gap-4 flex-1 auto-rows-fr ${Object.keys(peers).length === 0 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
-              {/* Local Stream Frame */}
               <div className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center shadow-lg">
                 <video
                   ref={localVideoRef}
@@ -690,15 +683,13 @@ export const Room: React.FC = () => {
                 </div>
               </div>
 
-              {/* Remote Stream Video Frames */}
               {Object.entries(peers).map(([id, peer]) => {
-                const stream = peerStreams.current[id];
                 const isVideoMuted = !!peer.isVideoMuted;
 
                 return (
                   <div key={id} className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center shadow-lg">
-                    <RemoteVideo stream={stream} isVideoMuted={isVideoMuted} />
-                    
+                    <RemoteVideo stream={peer.stream} isVideoMuted={isVideoMuted} />
+
                     {isVideoMuted && (
                       <div className="flex flex-col items-center justify-center gap-3">
                         <div className="w-20 h-20 rounded-full bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-2xl font-bold text-blue-400">
@@ -740,7 +731,6 @@ export const Room: React.FC = () => {
         <ChatAndFilesPanel socket={socket} roomId={roomId || ''} />
       </div>
 
-      {/* Footer Toolbar */}
       <div className={`h-16 flex justify-center items-center gap-4 shrink-0 border-t ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <button
           onClick={toggleMic}

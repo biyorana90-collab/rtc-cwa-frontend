@@ -88,8 +88,8 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
   };
 
   const getCleanDownloadUrl = (rawUrl: string): string => {
-    if (!rawUrl) return '#';
-    const matches = rawUrl.match(/https?:\/\/[^\s\]\)]+/g);
+    if (!rawUrl) return '';
+    const matches = rawUrl.match(/https?:\/\/[^\s\]\)\"]+/g);
     if (matches && matches.length > 0) {
       return matches[matches.length - 1];
     }
@@ -103,19 +103,19 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     try {
       const targetUrl = getCleanDownloadUrl(f.fileUrl);
       const token = localStorage.getItem('token');
-      
+
       const response = await fetch(targetUrl, {
         method: 'GET',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error status: ${response.status}`);
+        throw new Error(`HTTP error ${response.status}`);
       }
 
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
-      
+
       const link = document.createElement('a');
       link.href = blobUrl;
       link.setAttribute('download', f.originalName || f.filename || 'downloaded-file');
@@ -124,14 +124,13 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       link.remove();
       window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      console.error('Blob download failed, attempting direct window fallback:', err);
+      console.error('Blob fetch failed, resorting to direct tab opening:', err);
       window.open(getCleanDownloadUrl(f.fileUrl), '_blank');
     }
   };
 
   return (
     <div className="w-80 h-full bg-slate-800 border-l border-slate-700 flex flex-col">
-      {/* Tabs */}
       <div className="flex border-b border-slate-700 bg-slate-900">
         <button
           onClick={() => setActiveTab('chat')}
@@ -151,7 +150,6 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         </button>
       </div>
 
-      {/* Tab Body */}
       {activeTab === 'chat' ? (
         <div className="flex-1 flex flex-col justify-between overflow-hidden">
           <div className="flex-1 p-4 overflow-y-auto space-y-3">
