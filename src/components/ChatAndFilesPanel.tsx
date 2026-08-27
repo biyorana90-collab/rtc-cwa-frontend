@@ -9,7 +9,7 @@ interface ChatAndFilesProps {
   roomId: string;
 }
 
-const BACKEND_URL = 'https://rtc-cwa-backend-production.up.railway.app';
+const BACKEND_URL = (import.meta as any).env?.VITE_BACKEND_URL || 'https://rtc-cwa-backend-production.up.railway.app';
 
 export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId }) => {
   const { user } = useContext(AuthContext);
@@ -21,8 +21,10 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchFiles();
-    fetchChatHistory();
+    if (roomId) {
+      fetchFiles();
+      fetchChatHistory();
+    }
 
     if (!socket) return;
 
@@ -46,29 +48,41 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       socket.off('receive-message', handleReceiveMessage);
       socket.off('file-uploaded', handleFileUploaded);
     };
-  }, [socket, roomId, user]);
+  }, [socket, roomId]);
 
   const fetchFiles = async () => {
     try {
-      const res = await API.get(`/files/${roomId}`);
+      const res = await API.get(`/api/files/${roomId}`);
       if (Array.isArray(res.data)) {
         setFiles(res.data);
       }
     } catch (err) {
-      console.warn('Unable to load files:', err);
+      try {
+        const fallbackRes = await API.get(`/files/${roomId}`);
+        if (Array.isArray(fallbackRes.data)) setFiles(fallbackRes.data);
+      } catch (fallbackErr) {
+        setFiles([]);
+      }
     }
   };
 
   const fetchChatHistory = async () => {
     try {
-      // Point correctly to the backend API route
-      const res = await API.get(`/messages/${roomId}`);
+      const res = await API.get(`/api/messages/${roomId}`);
       if (Array.isArray(res.data)) {
         setMessages(res.data);
         setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       }
     } catch (err) {
-      setMessages([]);
+      try {
+        const fallbackRes = await API.get(`/messages/${roomId}`);
+        if (Array.isArray(fallbackRes.data)) {
+          setMessages(fallbackRes.data);
+          setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+        }
+      } catch (fallbackErr) {
+        setMessages([]);
+      }
     }
   };
 
@@ -97,9 +111,16 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
     setUploading(true);
     try {
-      const res = await API.post('/files/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      let res;
+      try {
+        res = await API.post('/api/files/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } catch {
+        res = await API.post('/files/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
 
       const uploadedData = res.data;
       setFiles((prev) => [uploadedData, ...prev]);
@@ -140,10 +161,10 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
     try {
       const response = await fetch(targetUrl, { mode: 'cors' });
-      if (!response.ok) throw new Error(`Server returned status ${response.status}`);
+      if (!response.ok) throw new Error(`Server status ${response.status}`);
 
       const blob = await response.blob();
-      if (blob.size === 0) throw new Error('File payload empty');
+      if (blob.size === 0) throw new Error('Empty payload');
 
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');

@@ -119,7 +119,12 @@ export const Room: React.FC = () => {
     const registerParticipant = async () => {
       if (!roomId) return;
       try {
-        const res = await API.post(`/meetings/join/${roomId}`);
+        let res;
+        try {
+          res = await API.post(`/api/meetings/join/${roomId}`);
+        } catch {
+          res = await API.post(`/meetings/join/${roomId}`);
+        }
         if (res.data?.isHost !== undefined) {
           const verifiedIsHost = !!res.data.isHost;
           setIsHost(verifiedIsHost);
@@ -130,7 +135,7 @@ export const Room: React.FC = () => {
           }
         }
       } catch (err) {
-        console.warn('Backend session register warning:', err);
+        console.warn('Meeting registration fallback handled:', err);
       }
     };
     registerParticipant();
