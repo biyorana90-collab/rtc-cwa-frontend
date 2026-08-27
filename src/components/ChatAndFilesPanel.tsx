@@ -26,8 +26,6 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
     if (!socket) return;
 
-    socket.emit('join-room', { roomId, user: user?.name || 'Anonymous' });
-
     const handleReceiveMessage = (msg: any) => {
       setMessages((prev) => [...prev, msg]);
       setTimeout(() => {
@@ -36,7 +34,11 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     };
 
     const handleFileUploaded = (fileData: any) => {
-      setFiles((prev) => [fileData, ...prev]);
+      setFiles((prev) => {
+        const exists = prev.some((f) => (f._id && f._id === fileData._id) || f.filename === fileData.filename);
+        if (exists) return prev;
+        return [fileData, ...prev];
+      });
     };
 
     socket.on('receive-message', handleReceiveMessage);
@@ -51,15 +53,17 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
   const fetchFiles = async () => {
     try {
       const res = await API.get(`/files/${roomId}`);
-      setFiles(res.data);
+      if (Array.isArray(res.data)) {
+        setFiles(res.data);
+      }
     } catch (err) {
-      console.warn('Files endpoint unreachable or empty.');
+      console.warn('Unable to load room files.');
     }
   };
 
   const fetchChatHistory = async () => {
     try {
-      const res = await API.get(`/chat/${roomId}`);
+      const res = await API.get(`/messages/${roomId}`);
       if (Array.isArray(res.data)) {
         setMessages(res.data);
         setTimeout(() => {
@@ -67,7 +71,14 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         }, 50);
       }
     } catch (err) {
-      setMessages([]);
+      try {
+        const fallbackRes = await API.get(`/chat/${roomId}`);
+        if (Array.isArray(fallbackRes.data)) {
+          setMessages(fallbackRes.data);
+        }
+      } catch (fallbackErr) {
+        setMessages([]);
+      }
     }
   };
 
@@ -100,60 +111,74 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
+      const uploadedData = res.data;
+      setFiles((prev) => [uploadedData, ...prev]);
+
       if (socket) {
-        socket.emit('file-uploaded', { ...res.data, roomId });
+        socket.emit('file-uploaded', { ...uploadedData, roomId });
       }
-    } catch (err: any) {
+   } catch (err: any) {
       alert(err.response?.data?.message || 'File upload failed.');
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
-
-  const sanitizeUrl = (rawUrl: string): string => {
+  const buildCleanFileUrl = (fileObj: any): string => {
+    const rawUrl = fileObj.fileUrl || fileObj.url || fileObj.path || fileObj.filename || '';
     if (!rawUrl) return '';
+
     let cleaned = String(rawUrl).replace(/[\[\]\(\)\"\']/g, '').trim();
 
-    // Fix double domain prefixing issue
-    const lastHttps = cleaned.lastIndexOf('https://');
-    const lastHttp = cleaned.lastIndexOf('http://');
-
-    if (lastHttps !== -1) {
-      return cleaned.substring(lastHttps);
-    }
-    if (lastHttp !== -1) {
-      return cleaned.substring(lastHttp);
+    if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+      return cleaned;
     }
 
-    const formattedPath = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
-    return `${BACKEND_URL}${formattedPath}`;
+    const httpsIdx = cleaned.indexOf('https://');
+    const httpIdx = cleaned.indexOf('http://');
+    if (httpsIdx !== -1) return cleaned.substring(httpsIdx);
+    if (httpIdx !== -1) return cleaned.substring(httpIdx);
+
+    const relativePath = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+    return `${BACKEND_URL}${relativePath}`;
   };
 
-  const handleDownloadFile = async (rawUrl: string, fileName: string) => {
-    const targetUrl = sanitizeUrl(rawUrl);
+  const handleDownloadFile = async (fileObj: any) => {
+    const targetUrl = buildCleanFileUrl(fileObj);
+    const fileName = fileObj.originalName || fileObj.filename || 'downloaded-file';
+
+    if (!targetUrl) {
+      alert('Invalid file URL.');
+      return;
+    }
+
     try {
       const response = await fetch(targetUrl, { mode: 'cors' });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw new Error(`Server returned status ${response.status}`);
 
       const blob = await response.blob();
+      if (blob.size === 0) {
+        throw new Error('Downloaded file is empty.');
+      }
+
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = fileName || 'downloaded-file';
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
-    } catch (error) {
-      const link = document.createElement('a');
-      link.href = targetUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.download = fileName || 'download';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    } catch (err) {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
     }
+  };
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return 'File';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
   return (
@@ -208,21 +233,21 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       ) : (
         <div className="flex-1 flex flex-col justify-between overflow-hidden p-4">
           <div className="flex-1 overflow-y-auto space-y-3">
-            {files.map((f) => (
-              <div key={f._id || f.filename} className="p-3 bg-slate-900 border border-slate-700 rounded-lg flex items-center justify-between">
+            {files.map((f, idx) => (
+              <div key={f._id || idx} className="p-3 bg-slate-900 border border-slate-700 rounded-lg flex items-center justify-between">
                 <div className="flex items-center gap-2 overflow-hidden">
-                  {f.originalName?.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+                  {(f.originalName || f.filename)?.match(/\.(jpg|jpeg|png|gif)$/i) ? (
                     <ImageIcon className="w-5 h-5 text-blue-400 shrink-0" />
                   ) : (
                     <FileText className="w-5 h-5 text-blue-400 shrink-0" />
                   )}
                   <div className="truncate">
                     <p className="text-xs font-semibold text-slate-200 truncate">{f.originalName || f.filename}</p>
-                    <span className="text-[10px] text-slate-500">{f.size ? (f.size / 1024).toFixed(1) + ' KB' : 'File'}</span>
+                    <span className="text-[10px] text-slate-500">{formatFileSize(f.size)}</span>
                   </div>
                 </div>
                 <button
-                  onClick={() => handleDownloadFile(f.fileUrl || f.url || f.path || f.filename, f.originalName || f.filename)}
+                  onClick={() => handleDownloadFile(f)}
                   className="p-1.5 bg-slate-800 hover:bg-blue-600 rounded shrink-0 transition"
                   title="Download File"
                 >

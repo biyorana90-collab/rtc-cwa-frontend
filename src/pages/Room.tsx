@@ -42,10 +42,27 @@ const RemoteVideoPlayer: React.FC<{ stream?: MediaStream }> = ({ stream }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.play().catch((err) => console.warn('Remote video playback deferred:', err));
+    let isMounted = true;
+    const videoEl = videoRef.current;
+
+    if (videoEl && stream) {
+      videoEl.srcObject = stream;
+      const playPromise = videoEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          if (isMounted && err.name !== 'AbortError') {
+            console.warn('Playback error caught safely:', err);
+          }
+        });
+      }
     }
+
+    return () => {
+      isMounted = false;
+      if (videoEl) {
+        videoEl.srcObject = null;
+      }
+    };
   }, [stream]);
 
   return (
@@ -146,19 +163,25 @@ export const Room: React.FC = () => {
           localVideoRef.current.srcObject = stream;
         }
 
-        newSocket.emit('join-room', { 
-          roomId, 
-          userId: currentUser?._id, 
-          userName: currentUser?.name, 
+        newSocket.emit('join-room', {
+          roomId,
+          userId: currentUser?._id,
+          userName: currentUser?.name || 'User',
           isHost,
-          isVideoOff: initialVideoState 
+          isVideoOff: initialVideoState
         });
       })
       .catch((err) => {
         console.warn('Hardware access error:', err);
         setIsVideoOff(true);
         setIsAudioMuted(true);
-        newSocket.emit('join-room', { roomId, userId: currentUser?._id, userName: currentUser?.name, isHost, isVideoOff: true });
+        newSocket.emit('join-room', {
+          roomId,
+          userId: currentUser?._id,
+          userName: currentUser?.name || 'User',
+          isHost,
+          isVideoOff: true
+        });
       });
 
     return () => {
@@ -169,16 +192,15 @@ export const Room: React.FC = () => {
     };
   }, [roomId, isHost]);
 
-  const renegotiatePeerConnections = async () => {
-    if (!socket) return;
-    for (const [targetSocketId, pc] of Object.entries(peerConnections.current)) {
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('offer', { targetSocketId, offer, userName: currentUser?.name, isVideoOff });
-      } catch (err) {
-        console.error('Failed to renegotiate peer connection:', err);
-      }
+  const triggerRenegotiation = async (targetSocketId: string) => {
+    const pc = peerConnections.current[targetSocketId];
+    if (!pc || !socket) return;
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('offer', { targetSocketId, offer, userName: currentUser?.name, isVideoOff });
+    } catch (err) {
+      console.error('Renegotiation failed for peer:', targetSocketId, err);
     }
   };
 
@@ -186,12 +208,6 @@ export const Room: React.FC = () => {
     if (!socket) return;
 
     socket.on('user-joined', async ({ socketId, userName, isHost: remoteIsHost, isVideoOff: remoteVideoState }) => {
-      // Clean up previous connection if rejoin happens on same or existing socket key
-      if (peerConnections.current[socketId]) {
-        peerConnections.current[socketId].close();
-        delete peerConnections.current[socketId];
-      }
-
       setPeers((prev) => ({
         ...prev,
         [socketId]: {
@@ -210,13 +226,7 @@ export const Room: React.FC = () => {
         });
       }
 
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('offer', { targetSocketId: socketId, offer, userName: currentUser?.name, isVideoOff });
-      } catch (err) {
-        console.error('Error creating offer:', err);
-      }
+      await triggerRenegotiation(socketId);
     });
 
     socket.on('offer', async ({ senderSocketId, offer, userName, isVideoOff: remoteVideoState }) => {
@@ -230,17 +240,14 @@ export const Room: React.FC = () => {
       }));
 
       let pc = peerConnections.current[senderSocketId];
-      if (pc) {
-        pc.close();
-      }
-
-      pc = createPeerConnection(senderSocketId, userName, false, remoteVideoState);
-      peerConnections.current[senderSocketId] = pc;
-
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
-          pc.addTrack(track, localStreamRef.current!);
-        });
+      if (!pc) {
+        pc = createPeerConnection(senderSocketId, userName, false, remoteVideoState);
+        peerConnections.current[senderSocketId] = pc;
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach((track) => {
+            pc.addTrack(track, localStreamRef.current!);
+          });
+        }
       }
 
       try {
@@ -438,17 +445,17 @@ export const Room: React.FC = () => {
         const newVideoOffState = !nextEnabledState;
         setIsVideoOff(newVideoOffState);
 
-        Object.values(peerConnections.current).forEach((pc) => {
+        Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
           const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
           if (sender) {
             sender.replaceTrack(videoTrack);
           }
+          triggerRenegotiation(targetId);
         });
 
         if (socket && roomId) {
           socket.emit('toggle-camera', { roomId, isVideoOff: newVideoOffState });
         }
-        await renegotiatePeerConnections();
       } else {
         const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
         const newVideoTrack = mediaStream.getVideoTracks()[0];
@@ -460,19 +467,19 @@ export const Room: React.FC = () => {
           localVideoRef.current.srcObject = currentStream;
         }
 
-        Object.values(peerConnections.current).forEach((pc) => {
+        Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
           const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
           if (sender) {
             sender.replaceTrack(newVideoTrack);
           } else {
             pc.addTrack(newVideoTrack, currentStream!);
           }
+          triggerRenegotiation(targetId);
         });
 
         if (socket && roomId) {
           socket.emit('toggle-camera', { roomId, isVideoOff: false });
         }
-        await renegotiatePeerConnections();
       }
     } catch (err) {
       console.error('Error toggling camera dynamically:', err);
@@ -598,7 +605,7 @@ export const Room: React.FC = () => {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const screenTrack = screenStream.getVideoTracks()[0];
 
-      Object.values(peerConnections.current).forEach((pc) => {
+      Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
         const senders = pc.getSenders();
         const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
         if (videoSender) {
@@ -606,6 +613,7 @@ export const Room: React.FC = () => {
         } else {
           pc.addTrack(screenTrack, screenStream);
         }
+        triggerRenegotiation(targetId);
       });
 
       if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
@@ -623,12 +631,13 @@ export const Room: React.FC = () => {
   const stopScreenShare = () => {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
-      Object.values(peerConnections.current).forEach((pc) => {
+      Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
         const senders = pc.getSenders();
         const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
         if (videoSender && videoTrack) {
           videoSender.replaceTrack(videoTrack);
         }
+        triggerRenegotiation(targetId);
       });
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
     }
