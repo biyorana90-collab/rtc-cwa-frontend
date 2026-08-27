@@ -9,7 +9,8 @@ interface ChatAndFilesProps {
   roomId: string;
 }
 
-const BACKEND_URL = (import.meta as any).env?.VITE_BACKEND_URL || 'https://rtc-cwa-backend-production.up.railway.app';
+const rawBackendUrl = (import.meta as any).env?.VITE_SOCKET_URL || (import.meta as any).env?.VITE_BACKEND_URL || 'https://rtc-cwa-backend-production.up.railway.app';
+const BACKEND_URL = rawBackendUrl.replace(/\/+$/, '');
 
 export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId }) => {
   const { user } = useContext(AuthContext);
@@ -23,7 +24,6 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
   useEffect(() => {
     if (roomId) {
       fetchFiles();
-      fetchChatHistory();
     }
 
     if (!socket) return;
@@ -57,32 +57,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         setFiles(res.data);
       }
     } catch (err) {
-      try {
-        const fallbackRes = await API.get(`/api/files/${roomId}`);
-        if (Array.isArray(fallbackRes.data)) setFiles(fallbackRes.data);
-      } catch (fallbackErr) {
-        setFiles([]);
-      }
-    }
-  };
-
-  const fetchChatHistory = async () => {
-    try {
-      const res = await API.get(`/messages/${roomId}`);
-      if (Array.isArray(res.data)) {
-        setMessages(res.data);
-        setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-      }
-    } catch (err) {
-      try {
-        const fallbackRes = await API.get(`/api/messages/${roomId}`);
-        if (Array.isArray(fallbackRes.data)) {
-          setMessages(fallbackRes.data);
-          setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-        }
-      } catch (fallbackErr) {
-        setMessages([]);
-      }
+      setFiles([]);
     }
   };
 
@@ -111,16 +86,9 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
     setUploading(true);
     try {
-      let res;
-      try {
-        res = await API.post('/files/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-      } catch {
-        res = await API.post('/api/files/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-      }
+      const res = await API.post('/files/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
 
       const uploadedData = res.data;
       setFiles((prev) => [uploadedData, ...prev]);

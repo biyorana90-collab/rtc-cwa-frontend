@@ -1,35 +1,18 @@
 import axios from 'axios';
 
-// Explicit production Railway API URL
-const BASE_URL = 'https://rtc-cwa-backend-production.up.railway.app/api';
+const rawUrl = (import.meta as any).env?.VITE_SOCKET_URL || (import.meta as any).env?.VITE_BACKEND_URL || 'https://rtc-cwa-backend-production.up.railway.app';
+const cleanBaseUrl = rawUrl.replace(/\/+$/, '');
 
 const API = axios.create({
-  baseURL: BASE_URL,
-  timeout: 15000,
+  baseURL: `${cleanBaseUrl}/api`,
 });
 
-API.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-API.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
-      }
-    }
-    return Promise.reject(error);
+API.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+});
 
 export default API;
