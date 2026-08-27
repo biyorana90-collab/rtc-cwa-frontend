@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Socket } from 'socket.io-client';
 import { AuthContext } from '../context/AuthContext';
 import API from '../services/api';
-import { Send, Paperclip, FileText, Download, MessageSquare } from 'lucide-react';
+import { Send, Paperclip, FileText, Download, MessageSquare, Image as ImageIcon } from 'lucide-react';
 
 interface ChatAndFilesProps {
   socket: Socket | null;
@@ -87,21 +87,37 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     }
   };
 
-  // Safely resolve exact single download URL
   const getCleanDownloadUrl = (rawUrl: string): string => {
     if (!rawUrl) return '#';
-    
-    // Extract actual file path if string contains bracketed markdown or double URLs
     const matches = rawUrl.match(/https?:\/\/[^\s\]\)]+/g);
     if (matches && matches.length > 0) {
       return matches[matches.length - 1];
     }
-
     if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
       return rawUrl;
     }
-
     return `${BACKEND_URL}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+  };
+
+  const handleDownloadFile = async (f: any) => {
+    try {
+      const targetUrl = getCleanDownloadUrl(f.fileUrl);
+      const response = await fetch(targetUrl);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', f.originalName || f.filename || 'downloaded-file');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('Download failed:', err);
+      // Fallback direct navigation download
+      window.open(getCleanDownloadUrl(f.fileUrl), '_blank');
+    }
   };
 
   return (
@@ -159,23 +175,25 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         <div className="flex-1 flex flex-col justify-between overflow-hidden p-4">
           <div className="flex-1 overflow-y-auto space-y-3">
             {files.map((f) => (
-              <div key={f._id} className="p-3 bg-slate-900 border border-slate-700 rounded-lg flex items-center justify-between">
+              <div key={f._id || f.filename} className="p-3 bg-slate-900 border border-slate-700 rounded-lg flex items-center justify-between">
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <FileText className="w-5 h-5 text-blue-400 shrink-0" />
+                  {f.originalName?.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+                    <ImageIcon className="w-5 h-5 text-blue-400 shrink-0" />
+                  ) : (
+                    <FileText className="w-5 h-5 text-blue-400 shrink-0" />
+                  )}
                   <div className="truncate">
-                    <p className="text-xs font-semibold text-slate-200 truncate">{f.originalName}</p>
+                    <p className="text-xs font-semibold text-slate-200 truncate">{f.originalName || f.filename}</p>
                     <span className="text-[10px] text-slate-500">{(f.size / 1024).toFixed(1)} KB</span>
                   </div>
                 </div>
-                <a
-                  href={getCleanDownloadUrl(f.fileUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  download
+                <button
+                  onClick={() => handleDownloadFile(f)}
                   className="p-1.5 bg-slate-800 hover:bg-blue-600 rounded shrink-0 transition"
+                  title="Download File"
                 >
                   <Download className="w-4 h-4 text-slate-300 hover:text-white" />
-                </a>
+                </button>
               </div>
             ))}
           </div>
