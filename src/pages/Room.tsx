@@ -126,7 +126,7 @@ export const Room: React.FC = () => {
       localStorage.setItem(`isHost_${roomId}`, 'true');
     }
 
-    const socketUrl = (import.meta as any).env?.VITE_SOCKET_URL || 'http://localhost:5002';
+    const socketUrl = (import.meta as any).env?.VITE_SOCKET_URL || 'https://rtc-cwa-backend-production.up.railway.app';
     const newSocket = io(socketUrl, {
       auth: { token: localStorage.getItem('token') },
     });
@@ -169,17 +169,41 @@ export const Room: React.FC = () => {
     };
   }, [roomId, isHost]);
 
+  const renegotiatePeerConnections = async () => {
+    if (!socket) return;
+    for (const [targetSocketId, pc] of Object.entries(peerConnections.current)) {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { targetSocketId, offer, userName: currentUser?.name, isVideoOff });
+      } catch (err) {
+        console.error('Failed to renegotiate peer connection:', err);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!socket) return;
 
     socket.on('user-joined', async ({ socketId, userName, isHost: remoteIsHost, isVideoOff: remoteVideoState }) => {
+      setPeers((prev) => ({
+        ...prev,
+        [socketId]: {
+          userName: userName || 'Participant',
+          isHost: remoteIsHost || false,
+          isVideoMuted: remoteVideoState ?? false,
+        },
+      }));
+
       const pc = createPeerConnection(socketId, userName, remoteIsHost, remoteVideoState);
       peerConnections.current[socketId] = pc;
+
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
           pc.addTrack(track, localStreamRef.current!);
         });
       }
+
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -190,6 +214,15 @@ export const Room: React.FC = () => {
     });
 
     socket.on('offer', async ({ senderSocketId, offer, userName, isVideoOff: remoteVideoState }) => {
+      setPeers((prev) => ({
+        ...prev,
+        [senderSocketId]: {
+          ...prev[senderSocketId],
+          userName: userName || prev[senderSocketId]?.userName || 'Participant',
+          isVideoMuted: remoteVideoState ?? prev[senderSocketId]?.isVideoMuted ?? false,
+        },
+      }));
+
       let pc = peerConnections.current[senderSocketId];
       if (!pc) {
         pc = createPeerConnection(senderSocketId, userName, false, remoteVideoState);
@@ -199,11 +232,6 @@ export const Room: React.FC = () => {
             pc.addTrack(track, localStreamRef.current!);
           });
         }
-      } else {
-        setPeers((prev) => ({
-          ...prev,
-          [senderSocketId]: { ...prev[senderSocketId], isVideoMuted: remoteVideoState },
-        }));
       }
 
       try {
@@ -383,19 +411,6 @@ export const Room: React.FC = () => {
     return pc;
   };
 
-  const renegotiatePeerConnections = async () => {
-    if (!socket) return;
-    for (const [targetSocketId, pc] of Object.entries(peerConnections.current)) {
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('offer', { targetSocketId, offer, userName: currentUser?.name, isVideoOff });
-      } catch (err) {
-        console.error('Failed to renegotiate peer connection:', err);
-      }
-    }
-  };
-
   const toggleCamera = async () => {
     try {
       let currentStream = localStream;
@@ -424,6 +439,7 @@ export const Room: React.FC = () => {
         if (socket && roomId) {
           socket.emit('toggle-camera', { roomId, isVideoOff: newVideoOffState });
         }
+        await renegotiatePeerConnections();
       } else {
         const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
         const newVideoTrack = mediaStream.getVideoTracks()[0];
@@ -447,6 +463,7 @@ export const Room: React.FC = () => {
         if (socket && roomId) {
           socket.emit('toggle-camera', { roomId, isVideoOff: false });
         }
+        await renegotiatePeerConnections();
       }
     } catch (err) {
       console.error('Error toggling camera dynamically:', err);

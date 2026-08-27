@@ -26,7 +26,6 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
     if (!socket) return;
 
-    // Ensure the socket is joined to the current room
     socket.emit('join-room', { roomId, user: user?.name || 'Anonymous' });
 
     const handleReceiveMessage = (msg: any) => {
@@ -54,7 +53,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       const res = await API.get(`/files/${roomId}`);
       setFiles(res.data);
     } catch (err) {
-      console.error('Failed to load room files.');
+      console.warn('Files endpoint unreachable or empty.');
     }
   };
 
@@ -68,15 +67,8 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         }, 50);
       }
     } catch (err) {
-      // Fallback if chat endpoint is structured under messages
-      try {
-        const res = await API.get(`/messages/${roomId}`);
-        if (Array.isArray(res.data)) {
-          setMessages(res.data);
-        }
-      } catch (e) {
-        console.error('Failed to load chat history.');
-      }
+      // Fallback silently if chat history endpoint returns 404
+      setMessages([]);
     }
   };
 
@@ -123,25 +115,25 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     if (!rawUrl) return '';
     let cleaned = String(rawUrl).replace(/[\[\]\(\)\"\']/g, '').trim();
 
-    const httpIndex = cleaned.indexOf('http://');
+    if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+      return cleaned;
+    }
+
     const httpsIndex = cleaned.indexOf('https://');
+    const httpIndex = cleaned.indexOf('http://');
 
-    if (httpsIndex !== -1) {
-      return cleaned.substring(httpsIndex);
-    }
-    if (httpIndex !== -1) {
-      return cleaned.substring(httpIndex);
-    }
+    if (httpsIndex !== -1) return cleaned.substring(httpsIndex);
+    if (httpIndex !== -1) return cleaned.substring(httpIndex);
 
-    return `${BACKEND_URL}${cleaned.startsWith('/') ? '' : '/'}${cleaned}`;
+    const formattedPath = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+    return `${BACKEND_URL}${formattedPath}`;
   };
 
   const handleDownloadFile = async (rawUrl: string, fileName: string) => {
+    const targetUrl = sanitizeUrl(rawUrl);
     try {
-      const cleanFileUrl = sanitizeUrl(rawUrl);
-      const response = await fetch(cleanFileUrl, { method: 'GET' });
-
-      if (!response.ok) throw new Error('Network response was not ok');
+      const response = await fetch(targetUrl, { mode: 'cors' });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
@@ -153,12 +145,15 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
     } catch (error) {
-      console.warn('Direct blob fetch failed, falling back to window anchor open:', error);
+      // Direct anchor click fallback for cross-origin / direct static files
       const link = document.createElement('a');
-      link.href = sanitizeUrl(rawUrl);
+      link.href = targetUrl;
       link.target = '_blank';
-      link.download = fileName;
+      link.rel = 'noopener noreferrer';
+      link.download = fileName || 'download';
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
     }
   };
 
@@ -224,7 +219,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
                   )}
                   <div className="truncate">
                     <p className="text-xs font-semibold text-slate-200 truncate">{f.originalName || f.filename}</p>
-                    <span className="text-[10px] text-slate-500">{(f.size / 1024).toFixed(1)} KB</span>
+                    <span className="text-[10px] text-slate-500">{f.size ? (f.size / 1024).toFixed(1) + ' KB' : 'File'}</span>
                   </div>
                 </div>
                 <button
