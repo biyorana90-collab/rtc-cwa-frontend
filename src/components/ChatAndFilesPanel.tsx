@@ -22,23 +22,32 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
   useEffect(() => {
     fetchFiles();
+    fetchChatHistory();
 
     if (!socket) return;
 
-    socket.on('receive-message', (msg) => {
-      setMessages((prev) => [...prev, msg]);
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    });
+    // Ensure the socket is joined to the current room
+    socket.emit('join-room', { roomId, user: user?.name || 'Anonymous' });
 
-    socket.on('file-uploaded', (fileData) => {
+    const handleReceiveMessage = (msg: any) => {
+      setMessages((prev) => [...prev, msg]);
+      setTimeout(() => {
+        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+    };
+
+    const handleFileUploaded = (fileData: any) => {
       setFiles((prev) => [fileData, ...prev]);
-    });
+    };
+
+    socket.on('receive-message', handleReceiveMessage);
+    socket.on('file-uploaded', handleFileUploaded);
 
     return () => {
-      socket.off('receive-message');
-      socket.off('file-uploaded');
+      socket.off('receive-message', handleReceiveMessage);
+      socket.off('file-uploaded', handleFileUploaded);
     };
-  }, [socket, roomId]);
+  }, [socket, roomId, user]);
 
   const fetchFiles = async () => {
     try {
@@ -46,6 +55,28 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       setFiles(res.data);
     } catch (err) {
       console.error('Failed to load room files.');
+    }
+  };
+
+  const fetchChatHistory = async () => {
+    try {
+      const res = await API.get(`/chat/${roomId}`);
+      if (Array.isArray(res.data)) {
+        setMessages(res.data);
+        setTimeout(() => {
+          chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 50);
+      }
+    } catch (err) {
+      // Fallback if chat endpoint is structured under messages
+      try {
+        const res = await API.get(`/messages/${roomId}`);
+        if (Array.isArray(res.data)) {
+          setMessages(res.data);
+        }
+      } catch (e) {
+        console.error('Failed to load chat history.');
+      }
     }
   };
 
@@ -79,7 +110,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       });
 
       if (socket) {
-        socket.emit('file-uploaded', res.data);
+        socket.emit('file-uploaded', { ...res.data, roomId });
       }
     } catch (err: any) {
       alert(err.response?.data?.message || 'File upload failed.');
@@ -150,7 +181,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         <div className="flex-1 flex flex-col justify-between overflow-hidden">
           <div className="flex-1 p-4 overflow-y-auto space-y-3">
             {messages.map((m, idx) => (
-              <div key={idx} className="bg-slate-900 p-2.5 rounded-lg border border-slate-700">
+              <div key={m._id || idx} className="bg-slate-900 p-2.5 rounded-lg border border-slate-700">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-xs font-bold text-blue-400">{m.sender}</span>
                   <span className="text-[10px] text-slate-500">{m.timestamp}</span>
