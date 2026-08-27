@@ -51,7 +51,7 @@ const RemoteVideoPlayer: React.FC<{ stream?: MediaStream }> = ({ stream }) => {
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
           if (isMounted && err.name !== 'AbortError') {
-            console.warn('Playback error caught safely:', err);
+            console.warn('Playback deferred:', err);
           }
         });
       }
@@ -59,9 +59,7 @@ const RemoteVideoPlayer: React.FC<{ stream?: MediaStream }> = ({ stream }) => {
 
     return () => {
       isMounted = false;
-      if (videoEl) {
-        videoEl.srcObject = null;
-      }
+      if (videoEl) videoEl.srcObject = null;
     };
   }, [stream]);
 
@@ -132,7 +130,7 @@ export const Room: React.FC = () => {
           }
         }
       } catch (err) {
-        console.warn('Could not register participant session in backend:', err);
+        console.warn('Backend session register warning:', err);
       }
     };
     registerParticipant();
@@ -155,7 +153,7 @@ export const Room: React.FC = () => {
         setLocalStream(stream);
         const videoTrack = stream.getVideoTracks()[0];
         const audioTrack = stream.getAudioTracks()[0];
-        const initialVideoState = videoTrack ? !videoTrack.enabled : true;
+        const initialVideoState = videoTrack ? !videoTrack.enabled : false;
         setIsVideoOff(initialVideoState);
         if (audioTrack) setIsAudioMuted(!audioTrack.enabled);
 
@@ -171,8 +169,7 @@ export const Room: React.FC = () => {
           isVideoOff: initialVideoState
         });
       })
-      .catch((err) => {
-        console.warn('Hardware access error:', err);
+      .catch(() => {
         setIsVideoOff(true);
         setIsAudioMuted(true);
         newSocket.emit('join-room', {
@@ -191,18 +188,6 @@ export const Room: React.FC = () => {
       }
     };
   }, [roomId, isHost]);
-
-  const triggerRenegotiation = async (targetSocketId: string) => {
-    const pc = peerConnections.current[targetSocketId];
-    if (!pc || !socket) return;
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit('offer', { targetSocketId, offer, userName: currentUser?.name, isVideoOff });
-    } catch (err) {
-      console.error('Renegotiation failed for peer:', targetSocketId, err);
-    }
-  };
 
   useEffect(() => {
     if (!socket) return;
@@ -226,7 +211,13 @@ export const Room: React.FC = () => {
         });
       }
 
-      await triggerRenegotiation(socketId);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { targetSocketId: socketId, offer, userName: currentUser?.name, isVideoOff });
+      } catch (err) {
+        console.error('Failed to create peer offer:', err);
+      }
     });
 
     socket.on('offer', async ({ senderSocketId, offer, userName, isVideoOff: remoteVideoState }) => {
@@ -262,7 +253,7 @@ export const Room: React.FC = () => {
 
     socket.on('answer', async ({ senderSocketId, answer }) => {
       const pc = peerConnections.current[senderSocketId];
-      if (pc && (pc.signalingState === 'have-local-offer' || pc.signalingState === 'have-remote-offer')) {
+      if (pc && pc.signalingState !== 'stable') {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
         } catch (err) {
@@ -330,15 +321,11 @@ export const Room: React.FC = () => {
     });
 
     socket.on('whiteboard-permission-requested', ({ requesterSocketId, userName }) => {
-      if (isHost) {
-        setPermissionRequest({ type: 'whiteboard', requesterSocketId, userName });
-      }
+      if (isHost) setPermissionRequest({ type: 'whiteboard', requesterSocketId, userName });
     });
 
     socket.on('screenshare-permission-requested', ({ requesterSocketId, userName }) => {
-      if (isHost) {
-        setPermissionRequest({ type: 'screenshare', requesterSocketId, userName });
-      }
+      if (isHost) setPermissionRequest({ type: 'screenshare', requesterSocketId, userName });
     });
 
     socket.on('whiteboard-permission-response', ({ approved }) => {
@@ -346,7 +333,6 @@ export const Room: React.FC = () => {
         setHasWhiteboardPermission(true);
         setShowWhiteboard(true);
         socket.emit('toggle-whiteboard', { roomId, show: true });
-        alert('Host granted permission to open whiteboard.');
       } else {
         alert('Host denied your request to open whiteboard.');
       }
@@ -356,7 +342,6 @@ export const Room: React.FC = () => {
       if (approved) {
         setHasScreensharePermission(true);
         await startScreenShare();
-        alert('Host granted permission to share screen.');
       } else {
         alert('Host denied your request to share screen.');
       }
@@ -428,61 +413,18 @@ export const Room: React.FC = () => {
   };
 
   const toggleCamera = async () => {
-    try {
-      let currentStream = localStream;
+    if (!localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (!videoTrack) return;
 
-      if (!currentStream) {
-        currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: !isAudioMuted });
-        setLocalStream(currentStream);
-        if (localVideoRef.current) localVideoRef.current.srcObject = currentStream;
-      }
+    const nextState = !videoTrack.enabled;
+    videoTrack.enabled = nextState;
+    const isMutedNow = !nextState;
 
-      let videoTrack = currentStream.getVideoTracks()[0];
+    setIsVideoOff(isMutedNow);
 
-      if (videoTrack) {
-        const nextEnabledState = !videoTrack.enabled;
-        videoTrack.enabled = nextEnabledState;
-        const newVideoOffState = !nextEnabledState;
-        setIsVideoOff(newVideoOffState);
-
-        Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
-          const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(videoTrack);
-          }
-          triggerRenegotiation(targetId);
-        });
-
-        if (socket && roomId) {
-          socket.emit('toggle-camera', { roomId, isVideoOff: newVideoOffState });
-        }
-      } else {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        const newVideoTrack = mediaStream.getVideoTracks()[0];
-
-        currentStream.addTrack(newVideoTrack);
-        setIsVideoOff(false);
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = currentStream;
-        }
-
-        Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
-          const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(newVideoTrack);
-          } else {
-            pc.addTrack(newVideoTrack, currentStream!);
-          }
-          triggerRenegotiation(targetId);
-        });
-
-        if (socket && roomId) {
-          socket.emit('toggle-camera', { roomId, isVideoOff: false });
-        }
-      }
-    } catch (err) {
-      console.error('Error toggling camera dynamically:', err);
+    if (socket && roomId) {
+      socket.emit('toggle-camera', { roomId, isVideoOff: isMutedNow });
     }
   };
 
@@ -552,21 +494,17 @@ export const Room: React.FC = () => {
         mediaRecorderRef.current = recorder;
         setIsRecording(true);
       } catch (err) {
-        console.error('Failed to initiate screen recording:', err);
+        console.error('Failed screen recording:', err);
       }
     }
   };
 
   const muteParticipant = (targetSocketId: string) => {
-    if (socket && isHost) {
-      socket.emit('host-mute-participant', { targetSocketId });
-    }
+    if (socket && isHost) socket.emit('host-mute-participant', { targetSocketId });
   };
 
   const disableParticipantCamera = (targetSocketId: string) => {
-    if (socket && isHost) {
-      socket.emit('host-disable-camera', { targetSocketId });
-    }
+    if (socket && isHost) socket.emit('host-disable-camera', { targetSocketId });
   };
 
   const copyRoomInvite = () => {
@@ -605,7 +543,7 @@ export const Room: React.FC = () => {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const screenTrack = screenStream.getVideoTracks()[0];
 
-      Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
+      Object.entries(peerConnections.current).forEach(([_, pc]) => {
         const senders = pc.getSenders();
         const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
         if (videoSender) {
@@ -613,7 +551,6 @@ export const Room: React.FC = () => {
         } else {
           pc.addTrack(screenTrack, screenStream);
         }
-        triggerRenegotiation(targetId);
       });
 
       if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
@@ -631,13 +568,12 @@ export const Room: React.FC = () => {
   const stopScreenShare = () => {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
-      Object.entries(peerConnections.current).forEach(([targetId, pc]) => {
+      Object.entries(peerConnections.current).forEach(([_, pc]) => {
         const senders = pc.getSenders();
         const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
         if (videoSender && videoTrack) {
           videoSender.replaceTrack(videoTrack);
         }
-        triggerRenegotiation(targetId);
       });
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
     }
@@ -655,17 +591,13 @@ export const Room: React.FC = () => {
   };
 
   const leaveRoom = () => {
-    if (socket) {
-      socket.emit('leave-meeting', { roomId });
-    }
+    if (socket) socket.emit('leave-meeting', { roomId });
     cleanupAndExit();
   };
 
   const endMeetingForAll = () => {
     if (!isHost) return;
-    if (socket) {
-      socket.emit('end-meeting', { roomId });
-    }
+    if (socket) socket.emit('end-meeting', { roomId });
     cleanupAndExit();
   };
 

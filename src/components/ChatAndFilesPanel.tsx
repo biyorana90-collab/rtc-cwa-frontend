@@ -28,9 +28,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
 
     const handleReceiveMessage = (msg: any) => {
       setMessages((prev) => [...prev, msg]);
-      setTimeout(() => {
-        chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 50);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     };
 
     const handleFileUploaded = (fileData: any) => {
@@ -57,28 +55,20 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
         setFiles(res.data);
       }
     } catch (err) {
-      console.warn('Unable to load room files.');
+      console.warn('Unable to load files:', err);
     }
   };
 
   const fetchChatHistory = async () => {
     try {
+      // Point correctly to the backend API route
       const res = await API.get(`/messages/${roomId}`);
       if (Array.isArray(res.data)) {
         setMessages(res.data);
-        setTimeout(() => {
-          chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }, 50);
+        setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       }
     } catch (err) {
-      try {
-        const fallbackRes = await API.get(`/chat/${roomId}`);
-        if (Array.isArray(fallbackRes.data)) {
-          setMessages(fallbackRes.data);
-        }
-      } catch (fallbackErr) {
-        setMessages([]);
-      }
+      setMessages([]);
     }
   };
 
@@ -117,13 +107,14 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       if (socket) {
         socket.emit('file-uploaded', { ...uploadedData, roomId });
       }
-   } catch (err: any) {
+    } catch (err: any) {
       alert(err.response?.data?.message || 'File upload failed.');
     } finally {
       setUploading(false);
       e.target.value = '';
     }
   };
+
   const buildCleanFileUrl = (fileObj: any): string => {
     const rawUrl = fileObj.fileUrl || fileObj.url || fileObj.path || fileObj.filename || '';
     if (!rawUrl) return '';
@@ -133,11 +124,6 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
       return cleaned;
     }
-
-    const httpsIdx = cleaned.indexOf('https://');
-    const httpIdx = cleaned.indexOf('http://');
-    if (httpsIdx !== -1) return cleaned.substring(httpsIdx);
-    if (httpIdx !== -1) return cleaned.substring(httpIdx);
 
     const relativePath = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
     return `${BACKEND_URL}${relativePath}`;
@@ -157,9 +143,7 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       if (!response.ok) throw new Error(`Server returned status ${response.status}`);
 
       const blob = await response.blob();
-      if (blob.size === 0) {
-        throw new Error('Downloaded file is empty.');
-      }
+      if (blob.size === 0) throw new Error('File payload empty');
 
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
