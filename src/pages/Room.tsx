@@ -423,6 +423,19 @@ export const Room: React.FC = () => {
     return pc;
   };
 
+  const renegotiatePeers = async () => {
+    if (!socket) return;
+    for (const [targetSocketId, pc] of Object.entries(peerConnections.current)) {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { targetSocketId, offer, userName: currentUser?.name, isVideoOff: false });
+      } catch (err) {
+        console.error('Error renegotiating offer:', err);
+      }
+    }
+  };
+
   const toggleCamera = async () => {
     if (!localStream) return;
     const videoTrack = localStream.getVideoTracks()[0];
@@ -561,38 +574,41 @@ export const Room: React.FC = () => {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const screenTrack = screenStream.getVideoTracks()[0];
 
-      Object.entries(peerConnections.current).forEach(([_, pc]) => {
+      for (const pc of Object.values(peerConnections.current)) {
         const senders = pc.getSenders();
         const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
         if (videoSender) {
-          videoSender.replaceTrack(screenTrack);
+          await videoSender.replaceTrack(screenTrack);
         } else {
           pc.addTrack(screenTrack, screenStream);
         }
-      });
+      }
 
       if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
       screenTrack.onended = () => stopScreenShare();
       setIsScreenSharing(true);
+      setIsVideoOff(false);
 
       if (socket && roomId) {
         socket.emit('toggle-camera', { roomId, isVideoOff: false });
       }
+
+      await renegotiatePeers();
     } catch (err) {
       console.error('Screen sharing error:', err);
     }
   };
 
-  const stopScreenShare = () => {
+  const stopScreenShare = async () => {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
-      Object.entries(peerConnections.current).forEach(([_, pc]) => {
+      for (const pc of Object.values(peerConnections.current)) {
         const senders = pc.getSenders();
         const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
         if (videoSender && videoTrack) {
-          videoSender.replaceTrack(videoTrack);
+          await videoSender.replaceTrack(videoTrack);
         }
-      });
+      }
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
 
       const isCamOff = !videoTrack || !videoTrack.enabled;
@@ -601,6 +617,8 @@ export const Room: React.FC = () => {
       if (socket && roomId) {
         socket.emit('toggle-camera', { roomId, isVideoOff: isCamOff });
       }
+
+      await renegotiatePeers();
     }
     setIsScreenSharing(false);
   };
