@@ -109,11 +109,13 @@ export const Room: React.FC = () => {
     localStreamRef.current = localStream;
   }, [localStream]);
 
+  // Ensure local video element gets stream attached whenever video turns back on or localStream updates
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
+    if (localVideoRef.current && localStream && !isVideoOff) {
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch((err) => console.warn('Local play deferred:', err));
     }
-  }, [localStream]);
+  }, [localStream, isVideoOff]);
 
   useEffect(() => {
     const registerParticipant = async () => {
@@ -168,7 +170,7 @@ export const Room: React.FC = () => {
         setIsVideoOff(initialVideoState);
         if (audioTrack) setIsAudioMuted(!audioTrack.enabled);
 
-        if (localVideoRef.current) {
+        if (localVideoRef.current && !initialVideoState) {
           localVideoRef.current.srcObject = stream;
         }
 
