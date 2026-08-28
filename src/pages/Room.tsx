@@ -594,6 +594,13 @@ export const Room: React.FC = () => {
         }
       });
       if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
+
+      const isCamOff = !videoTrack || !videoTrack.enabled;
+      setIsVideoOff(isCamOff);
+
+      if (socket && roomId) {
+        socket.emit('toggle-camera', { roomId, isVideoOff: isCamOff });
+      }
     }
     setIsScreenSharing(false);
   };
