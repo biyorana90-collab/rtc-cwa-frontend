@@ -65,7 +65,13 @@ const RemoteVideoPlayer: React.FC<{ stream?: MediaStream }> = ({ stream }) => {
 
   return (
     <video
-      ref={videoRef}
+      ref={(el) => {
+        videoRef.current = el;
+        if (el && stream && el.srcObject !== stream) {
+          el.srcObject = stream;
+          el.play().catch(() => {});
+        }
+      }}
       autoPlay
       playsInline
       className="w-full h-full object-cover block"
@@ -108,14 +114,6 @@ export const Room: React.FC = () => {
   useEffect(() => {
     localStreamRef.current = localStream;
   }, [localStream]);
-
-  // Ensure local video element gets stream attached whenever video turns back on or localStream updates
-  useEffect(() => {
-    if (localVideoRef.current && localStream && !isVideoOff) {
-      localVideoRef.current.srcObject = localStream;
-      localVideoRef.current.play().catch((err) => console.warn('Local play deferred:', err));
-    }
-  }, [localStream, isVideoOff]);
 
   useEffect(() => {
     const registerParticipant = async () => {
@@ -702,7 +700,13 @@ export const Room: React.FC = () => {
               <div className="relative bg-slate-950 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center shadow-lg">
                 {!isVideoOff ? (
                   <video
-                    ref={localVideoRef}
+                    ref={(el) => {
+                      localVideoRef.current = el;
+                      if (el && localStream && el.srcObject !== localStream) {
+                        el.srcObject = localStream;
+                        el.play().catch(() => {});
+                      }
+                    }}
                     autoPlay
                     playsInline
                     muted
