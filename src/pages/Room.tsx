@@ -146,9 +146,15 @@ export const Room: React.FC = () => {
       localStorage.setItem(`isHost_${roomId}`, 'true');
     }
 
-    const socketUrl = (import.meta as any).env?.VITE_SOCKET_URL || 'https://rtc-cwa-backend-production.up.railway.app';
+    const rawSocketUrl = (import.meta as any).env?.VITE_SOCKET_URL || 'https://rtc-cwa-backend-production.up.railway.app';
+    const cleanSocketUrl = rawSocketUrl.trim().replace(/[\[\]\(\)\"\']/g, '').replace(/\/+$/, '');
+    const socketUrl = cleanSocketUrl.startsWith('http') ? cleanSocketUrl : `https://${cleanSocketUrl}`;
+
     const newSocket = io(socketUrl, {
       auth: { token: localStorage.getItem('token') },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
     });
     setSocket(newSocket);
 
@@ -422,11 +428,18 @@ export const Room: React.FC = () => {
     const videoTrack = localStream.getVideoTracks()[0];
     if (!videoTrack) return;
 
-    const nextState = !videoTrack.enabled;
-    videoTrack.enabled = nextState;
-    const isMutedNow = !nextState;
+    const nextEnabledState = !videoTrack.enabled;
+    videoTrack.enabled = nextEnabledState;
+    const isMutedNow = !nextEnabledState;
 
     setIsVideoOff(isMutedNow);
+
+    Object.values(peerConnections.current).forEach((pc) => {
+      const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+      if (sender) {
+        sender.track!.enabled = nextEnabledState;
+      }
+    });
 
     if (socket && roomId) {
       socket.emit('toggle-camera', { roomId, isVideoOff: isMutedNow });

@@ -9,8 +9,9 @@ interface ChatAndFilesProps {
   roomId: string;
 }
 
-const rawBackendUrl = (import.meta as any).env?.VITE_SOCKET_URL || (import.meta as any).env?.VITE_BACKEND_URL || 'https://rtc-cwa-backend-production.up.railway.app';
-const BACKEND_URL = rawBackendUrl.replace(/\/+$/, '');
+const rawBackendUrl = (import.meta as any).env?.VITE_SOCKET_URL || (import.meta as any).env?.VITE_BACKEND_URL || (import.meta as any).env?.VITE_API_URL || 'https://rtc-cwa-backend-production.up.railway.app';
+const cleanRawUrl = rawBackendUrl.trim().replace(/[\[\]\(\)\"\']/g, '').replace(/\/+$/, '').replace(/\/api\/?$/, '');
+const BACKEND_URL = cleanRawUrl.startsWith('http') ? cleanRawUrl : `https://${cleanRawUrl}`;
 
 export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId }) => {
   const { user } = useContext(AuthContext);
@@ -114,8 +115,8 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
       return cleaned;
     }
 
-    const relativePath = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
-    return `${BACKEND_URL}${relativePath}`;
+    const filename = cleaned.split('/').pop() || cleaned;
+    return `${BACKEND_URL}/uploads/${filename}`;
   };
 
   const handleDownloadFile = async (fileObj: any) => {
@@ -128,20 +129,8 @@ export const ChatAndFilesPanel: React.FC<ChatAndFilesProps> = ({ socket, roomId 
     }
 
     try {
-      const response = await fetch(targetUrl, { mode: 'cors' });
-      if (!response.ok) throw new Error(`Server status ${response.status}`);
-
-      const blob = await response.blob();
-      if (blob.size === 0) throw new Error('Empty payload');
-
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
+      const downloadEndpoint = `${BACKEND_URL}/api/files/download/${encodeURIComponent(fileObj.filename || fileName)}`;
+      window.open(downloadEndpoint, '_blank', 'noopener,noreferrer');
     } catch (err) {
       window.open(targetUrl, '_blank', 'noopener,noreferrer');
     }
